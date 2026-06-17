@@ -74,6 +74,32 @@ CCTV 3채널 영상을 입력으로 받아, 검출 → 추적 → 좌표 변환 
 - 3대 카메라의 검출 결과를 단일 위성 기반 BEV 글로벌 맵 위에 통합 표출
 - 차선(Lane) geometry를 함께 오버레이하여 교통 상황을 직관적으로 확인
 
+<table>
+  <tr>
+    <td align="center" valign="bottom">
+      <img
+        width="868"
+        height="724"
+        alt="위성사진"
+        src="https://github.com/user-attachments/assets/e91e1e29-a365-4500-b114-154e6eff7c70"
+      />
+    </td>
+    <td align="center" valign="bottom">
+      <img
+        width="868"
+        height="724"
+        alt="도로사진"
+        src="https://github.com/user-attachments/assets/1eac8b04-72ff-4f4b-aa99-ca6f3c4dde16"
+      />
+    </td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">
+      <sub>글로벌 맵 표출 예시 (좌: 위성사진, 우: 도로사진)</sub>
+    </td>
+  </tr>
+</table>
+
 **다중 카메라 융합 (겹침영역 중복 제거)**
 - 교차로 전경 카메라와 확대(zoom) 카메라의 화각이 겹쳐, 동일 객체가 두 카메라에서
   별개로 표출되는 문제가 발생
@@ -83,6 +109,12 @@ CCTV 3채널 영상을 입력으로 받아, 검출 → 추적 → 좌표 변환 
 **특정 차량(CAV) 재식별 기반 추적**
 - 목표 자율주행 차량의 쿼리 이미지와 검출 객체를 CLIP+VeRi 특징으로 비교하여 식별
 - 여러 카메라에 동시에 잡힌 동일 CAV는 하나로 통합하여 표출
+
+<img width="1825" height="1037" alt="image" src="https://github.com/user-attachments/assets/73d72e0c-65b4-45e7-abfa-fa60b2b1d057" />
+
+
+
+
 
 ---
 
@@ -95,9 +127,35 @@ CCTV 3채널 영상을 입력으로 받아, 검출 → 추적 → 좌표 변환 
 - 실시간 인지 결과 : `cctv-traffic.json` (BEV 맵 표출 및 외부 송신)
 - 리플레이 로그 : `cctv-traffic-log.jsonl` (프레임별 스냅샷 누적)
 
+<table>
+  <tr>
+    <td align="center" valign="middle" height="550">
+      <img
+        width="641"
+        alt="CCTV 분석 결과"
+        src="https://github.com/user-attachments/assets/e1b60092-4de1-4378-81da-791deeecbaec"
+      />
+    </td>
+    <td align="center" valign="middle" height="550">
+      <img
+        width="199"
+        alt="교통 정보 UI"
+        src="https://github.com/user-attachments/assets/271e374a-262a-42bd-a8dd-4d72448766ee"
+      />
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <sub>CCTV 영상 내 차량 이동정보 분석 결과물 (cctv-traffic.json)</sub>
+    </td>
+    <td align="center">
+      <sub>교통 정보 표출 예시 (UI/UX 화면)</sub>
+    </td>
+  </tr>
+</table>
 ---
 
-## 결과물로
+## 결과물
 
 **주요 산출물**
 - 다중 CCTV 기반 실시간 교통 객체 검출·추적머
@@ -110,3 +168,10 @@ CCTV 3채널 영상을 입력으로 받아, 검출 → 추적 → 좌표 변환 
 - YOLOv8 기반 검출 모델의 클래스별 검출 정확도(mAP) 및 실시간 처리 성능 검증
 - ETRI 원내 도로 시험 시나리오 영상을 통한 검출·추적·좌표 융합 결과 확인
 - 상세 결과 및 분석은 `docs/`(논문 초안, 지연시간/속도·방향 분석 등) 참조
+
+
+<img width="1401" height="601" alt="image" src="https://github.com/user-attachments/assets/c636a632-2ed9-430f-98f2-eafd8631fd5d" />
+
+
+
+
