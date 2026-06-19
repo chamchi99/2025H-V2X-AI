@@ -30,12 +30,100 @@ Ultralytics(YOLOv8)와 PyTorch 기반으로 구성되며, NVIDIA GPU 환경에�
 배치되어 있어, 컨테이너를 띄운 뒤 메인 파이프라인을 실행하면 RTSP 스트림 또는 영상 파일을
 입력으로 곧바로 동작한다. 세부 의존성은 `requirements.txt` / `environment.yml`에 정리되어 있다.
 
+> 처음 환경을 구성한다면 아래 순서로 진행한다.
+> 1. NVIDIA 드라이버 + Docker(+ NVIDIA Container Toolkit)가 설치된 GPU 서버를 준비한다.
+> 2. 파이프라인 코드와 가중치가 들어 있는 작업 디렉터리를 컨테이너의 `/workspace`로 마운트한다.
+> 3. 아래 [실행 방법](#️-실행-방법)대로 메인 스크립트를 실행하고 BEV 맵을 연다.
+
+---
+
+## ▶️ 실행 방법
+
+### 1) 입력 준비
+파이프라인은 **3대 카메라(cam1·cam2·cam3)를 동시에** 처리한다. 실행 시에는 **cam2(교차로 전경)
+입력 하나만** 지정하면, 나머지 cam1·cam3는 경로(파일명)의 카메라 토큰을 자동 치환하여 찾는다.
+즉 파일명에 `cam2` / `camera2` / `ch02` / `cctv02` 중 하나가 들어 있어야 하며, 같은 위치에
+대응되는 cam1·cam3 파일이 있어야 한다.
+
+```
+예) 입력으로  scn1_01_cam2_output.mp4  를 주면
+    자동으로  scn1_01_cam1_output.mp4 (cam1),  scn1_01_cam3_output.mp4 (cam3) 를 함께 로드
+```
+
+- **실시간**: RTSP 스트림 주소
+- **영상 파일**: ETRI 시나리오 영상(`2026_scenario/` 등)
+
+### 2) 파이프라인 실행
 ```bash
-# 파이프라인 실행 (RTSP 입력)
-docker exec -w /workspace KETI_AI python traffic_tracker.py --source "<RTSP 주소>"
+# 영상 파일 입력 (cam2 경로만 지정 → cam1/cam3 자동 매핑)
+docker exec -w /workspace KETI_AI \
+  python traffic_tracker.py \
+    --source 2026_scenario/scn1_01_cam2_output.mp4 \
+    --yolo-weights weights/yolov8_hardneg_ped.pt \
+    --save-vid
+
+# 실시간 RTSP 입력
+docker exec -w /workspace KETI_AI \
+  python traffic_tracker.py --source "rtsp://<주소>" --realtime
 
 # 종료
 docker exec KETI_AI pkill -f traffic_tracker.py
+```
+
+**자주 쓰는 옵션**
+
+| 옵션 | 설명 | 기본값 |
+|------|------|--------|
+| `--source` | 입력(RTSP 주소 또는 cam2 영상 경로) | — |
+| `--yolo-weights` | 검출 가중치 | `weights/yolov8_hardneg_ped.pt` |
+| `--conf-thres` | 검출 신뢰도 임계값 | `0.5` |
+| `--cav-query` | 목표 차량(CAV) 재식별용 쿼리 이미지 폴더 | `query_image` |
+| `--cav-threshold` | CAV 재식별 유사도 임계값 | `0.75` |
+| `--frame-skip` | N프레임마다 1번 처리(실시간 속도 보정용) | `1` |
+| `--realtime` | 영상 파일을 RTSP처럼 wall-clock에 맞춰 처리 | off |
+| `--save-vid` | 검출·추적이 그려진 결과 영상 저장 | off |
+| `--show-vid` | 처리 화면 실시간 표시 | off |
+
+### 3) 결과(BEV 맵) 확인
+실행하면 작업 디렉터리(`/workspace`)에 인지 결과 `cctv-traffic.json`이 매 프레임 갱신된다.
+BEV 글로벌 맵(`etri_mapbox.html`)은 같은 디렉터리의 이 파일을 읽어 표출하므로, 간단한 로컬
+웹 서버로 열면 된다.
+
+```bash
+# 작업 디렉터리에서
+python3 -m http.server 8000
+# 브라우저에서 → http://localhost:8000/etri_mapbox.html
+```
+
+---
+
+## 🔄 처리 파이프라인
+
+한 프레임이 입력에서 BEV 맵 표출까지 거치는 과정은 다음과 같다.
+
+| 단계 | 처리 내용 | 핵심 산출 |
+|------|-----------|-----------|
+| ① 입력 | cam1·cam2·cam3 3채널 프레임을 동기 로드 | 원본 프레임 |
+| ② 검출 | YOLOv8로 프레임별 5종 객체 검출 | 클래스 + bbox |
+| ③ 추적 | 카메라별 StrongSORT/OCSort로 추적 ID 부여 | track ID |
+| ④ CAV 재식별 | 쿼리 이미지와 CLIP+VeRi 특징 비교로 목표 차량 식별 | CAV global_id |
+| ⑤ 좌표 변환 | bbox 기준점을 카메라별 Homography로 GPS 변환 | 위경도(GPS) |
+| ⑥ 상태 추정 | GPS 시계열로 속도·진행 방향 산출, 정지 차량 고정, 보행자 영역 판정 | speed/heading 등 |
+| ⑦ 다중 카메라 융합 | 동일 객체 중복 제거(CAV 통합 + cam2/cam3 겹침 ROI 정리) | 중복 제거된 객체 목록 |
+| ⑧ 출력 | 프레임 인지 결과를 JSON으로 기록 | `cctv-traffic.json`, `…-log.jsonl` |
+| ⑨ 표출/연동 | BEV 맵이 JSON을 읽어 실시간 표출(필요 시 소켓 송신) | 글로벌 맵 화면 |
+
+```
+[cam1·cam2·cam3]
+      │  ② YOLOv8 검출
+      ▼
+  ③ 추적(StrongSORT/OCSort) ──④ CAV 재식별(CLIP+VeRi)
+      │
+      ▼  ⑤ Homography → GPS,  ⑥ 속도/방향/정지/보행자영역
+  ⑦ 다중 카메라 융합(중복 제거)
+      │
+      ▼  ⑧ cctv-traffic.json
+  ⑨ BEV 글로벌 맵 표출 (+ 외부 연동)
 ```
 
 ---
@@ -51,15 +139,15 @@ docker exec KETI_AI pkill -f traffic_tracker.py
 - 사전 학습 모델로 프레임을 1차 자동 라벨링한 뒤 검수·병합하여 학습 데이터셋(GT)을 구성
 - 학습/검증 데이터를 분리하고 클래스 체계를 5종으로 정렬하여 데이터셋 구성
 - 자전거·보행자 등 약점 클래스를 보강하기 위한 보조 데이터셋(하드 네거티브 포함)을 별도 운용
-- COCO 사전학습 `YOLOv8m`을 ETRI 원내 도 데이터셋(2025·2026)으로 fine-tuning하여
+- COCO 사전학습 `YOLOv8m`을 ETRI 원내 도로 데이터셋(2025·2026)으로 fine-tuning하여
   현장 환경에 맞춘 검출 모델을 확보
 
-또한 ETRI 시험도로에서 차량·자전거·보행자 중심의 다양한 교통 상황을 재현한 시험 시나리오
+또한 ETRI 원내 도로에서 차량·자전거·보행자 중심의 다양한 교통 상황을 재현한 시험 시나리오
 영상을 카메라별로 취득하여, 검출·추적 및 좌표 융합 성능 검증에 활용한다.
 
 ---
 
-## 🗺️ 교통 모니터링 서비스로
+## 🗺️ 교통 모니터링 서비스
 
 CCTV 3채널 영상을 입력으로 받아, 검출 → 추적 → 좌표 변환 → 융합 → 표출의 흐름으로
 동작한다.
@@ -158,7 +246,7 @@ CCTV 3채널 영상을 입력으로 받아, 검출 → 추적 → 좌표 변환 
 ## 결과물
 
 **주요 산출물**
-- 다중 CCTV 기반 실시간 교통 객체 검출·추적머
+- 다중 CCTV 기반 실시간 교통 객체 검출·추적
 - 카메라 영상 기반 검출 객체의 GPS 위치 추정 및 BEV 글로벌 맵 통합 표출
 - 다중 카메라 겹침영역 중복 제거(카메라 간 좌표 융합)
 - 트랜스포머 기반 특정 차량(CAV) 재식별 및 연속 추적
