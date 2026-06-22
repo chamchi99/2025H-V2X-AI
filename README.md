@@ -67,7 +67,7 @@ docker exec -w /workspace KETI_AI \
 
 # 실시간 RTSP 입력
 docker exec -w /workspace KETI_AI \
-  python traffic_tracker.py --source "rtsp://129.254.222.82" --realtime
+  python traffic_tracker.py --source "rtsp://admin:Keti2026%23%40%21@129.254.222.82" --realtime
 
 # 종료
 docker exec KETI_AI pkill -f traffic_tracker.py
