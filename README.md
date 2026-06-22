@@ -45,6 +45,9 @@ Ultralytics(YOLOv8)와 PyTorch 기반으로 구성되며, NVIDIA GPU 환경에�
 즉 파일명에 `cam2` / `camera2` / `ch02` / `cctv02` 중 하나가 들어 있어야 하며, 같은 위치에
 대응되는 cam1·cam3 파일이 있어야 한다.
 
+실시간 CCTV 입력의 경우에도 cam2에 해당하는 스트림의 RTSP 주소(xxx.xxx.xxx.82)를 입력하면, 
+나머지 cam1(xxx.xxx.xxx.81)과 cam3(xxx.xxx.xxx.83)에 해당하는 RTSP 스트림을 자동으로 불러온다. 
+
 ```
 예) 입력으로  scn1_01_cam2_output.mp4  를 주면
     자동으로  scn1_01_cam1_output.mp4 (cam1),  scn1_01_cam3_output.mp4 (cam3) 를 함께 로드
@@ -64,7 +67,7 @@ docker exec -w /workspace KETI_AI \
 
 # 실시간 RTSP 입력
 docker exec -w /workspace KETI_AI \
-  python traffic_tracker.py --source "rtsp://<주소>" --realtime
+  python traffic_tracker.py --source "rtsp://129.254.222.82" --realtime
 
 # 종료
 docker exec KETI_AI pkill -f traffic_tracker.py
