@@ -244,7 +244,313 @@ CCTV 3채널 영상을 입력으로 받아, 검출 → 추적 → 좌표 변환 
     </td>
   </tr>
 </table>
+
 ---
+
+## TCP 소켓 통신 기능
+
+<details>
+<summary><b>📡 TCP 소켓 통신 기능 (펼치기)</b></summary>
+
+<br>
+
+**대상 코드:** `traffic_tracker.py` (현재 최신 버전 + TCP 통신 포팅)  
+**수신 클라이언트:** `yolo_receiver.cpp` (C++)  
+**검증 도구:** `comm_monitor.py` (Python echo 모니터)
+
+
+
+<details>
+<summary><b>📖 개요</b></summary>
+
+<br>
+
+교차로 멀티카메라 추적 시스템(`traffic_tracker.py`)의 프레임별 분석 결과를 **TCP 소켓을 통해 외부 프로그램(C++/V2X)에 실시간 스트리밍**하는 기능이다.
+
+기존에는 분석 결과를 디스크의 JSON 파일로만 저장했으나, 본 기능으로 **파일을 거치지 않고 메모리에서 바로 소켓으로 송신**하여 외부 시스템이 실시간으로 데이터를 소비할 수 있다.
+
+- **서버(송신):** Python `traffic_tracker.py`
+- **클라이언트(수신):** C++ `yolo_receiver.cpp`
+
+</details>
+
+
+
+<details>
+<summary><b>📡 통신 구조</b></summary>
+
+<br>
+
+## 2. 통신 구조
+
+### 2.1 연결 모델
+
+```text
+┌─────────────────────────────┐         TCP :9000          ┌──────────────────────┐
+│  Python AI 서버 (Docker)     │  ───── newline JSON ─────▶ │  C++ 수신 클라이언트    │
+│  traffic_tracker.py         │                            │  yolo_receiver.cpp   │
+│  YoloTCPServer (listen)     │ ◀──── connect ──────────── │  (connect, 재시도)     │
+└─────────────────────────────┘                            └──────────────────────┘
+        서버(송신)                                              클라이언트(수신)
+```
+
+- **서버 = Python**, **클라이언트 = C++**
+- 서버는 `0.0.0.0:9000`에서 `listen(1)` → **동시 1개 클라이언트만 허용**
+- 서버는 클라이언트 접속 전까지 영상 처리를 시작하지 않음 (`client_connected.wait()`)
+- 처리 중 클라이언트가 끊기면 자동 일시정지 후 재연결 대기
+- C++ 클라이언트는 연결 실패/끊김 시 2초 간격 무한 재연결
+
+### 2.2 서버 내부 (`YoloTCPServer`)
+
+```text
+push_result(dict)  →  data_queue (maxsize=30, FIFO, 가득 차면 오래된 것 drop)
+                            │
+                     별도 송신 스레드
+                            │
+                   json.dumps(한 줄) + "\n"  →  conn.sendall()
+```
+
+- 메인 추론 루프는 `push_result()`만 호출 (논블로킹)
+- 송신은 데몬 스레드가 별도 수행
+- 큐가 가득 차면 최신 데이터 우선 유지
+
+### 2.3 메시지 프로토콜
+
+- UTF-8
+- NDJSON(Newline Delimited JSON)
+- 메시지 구분자: `\n`
+- 반드시 한 줄 JSON
+- 매 프레임 `frame_update`, `console_logs` 전송
+
+</details>
+
+
+
+<details>
+<summary><b>📦 데이터 포맷</b></summary>
+
+<br>
+
+## 3. 데이터 포맷
+
+### 3.1 `frame_update`
+
+```jsonc
+{
+  "type": "frame_update",
+  "cctv_traffic": {
+    "traffic": [
+      {
+        "cctv": 2,
+        "class": 0,
+        "id": 1.0,
+        "bbox": [x1, y1, x2, y2],
+        "GPS": [lat, lon],
+        "bbox_gps": [[lat, lon], ...],
+        "speed": 0,
+        "heading": 1.45,
+        "lane": -1,
+        "stop_duration": 0,
+        "ped_zone": "crosswalk"
+      }
+    ],
+    "ai_latency": 0.1286,
+    "frame_start_time": 1750...,
+    "frame_end_time": 1750...,
+    "frame_idx": 2
+  },
+  "entry": [],
+  "vds": [...]
+}
+```
+
+### 3.2 `console_logs`
+
+```jsonc
+{
+  "type": "console_logs",
+  "logs": [
+    "video 1/1 ...",
+    "[TIMING #1] ...",
+    "[POST] ..."
+  ]
+}
+```
+
+### 3.3 디스크 저장 파일
+
+| 파일 | 내용 |
+|------|------|
+| `cctv-traffic.json` | 현재 프레임 스냅샷 |
+| `cctv-traffic-vds.json` | 차선별 교통량 |
+| `cctv-traffic-log.jsonl` | 전체 프레임 로그 |
+
+저장 위치:
+
+```text
+컨테이너 : /workspace/
+호스트   : /home/super/c3_yolo26_pipeline/
+```
+
+</details>
+
+
+
+<details>
+<summary><b>🚀 전체 파이프라인 및 실행 방법</b></summary>
+
+<br>
+
+## 4. 전체 파이프라인
+
+```text
+3캠 영상 (camera1/2/3)
+   │
+   ▼ YOLO 검출
+   ▼ 추적
+   ▼ Homography → GPS 변환
+   ▼ 속도·heading 산출
+   ▼ CAV Re-ID
+   ▼ Cross-camera 중복 제거
+   ▼ 클래스 평활화
+   │
+   ├──▶ JSON 저장
+   └──▶ TCP :9000 송신
+             │
+             ▼
+      yolo_receiver.cpp
+             │
+             ▼
+      다운스트림 V2X
+```
+
+## 5. 실행 방법
+
+### 5.0 최초 1회 컴파일
+
+```bash
+g++ -O2 -pthread /home/super/Downloads/yolo_receiver.cpp \
+-o /home/super/Downloads/yolo_receiver
+```
+
+### 5.1 Python 서버 실행
+
+```bash
+docker exec -w /workspace YOLO26_C3 python traffic_tracker.py \
+  --source /workspace/2026_scenario/scn1_03_cam2_output.mp4 \
+  --yolo-weights /workspace/weights/yolov8_hardneg_ped.pt \
+  --cav-query /workspace/query_image \
+  --save-vid
+```
+
+### 5.2 C++ 클라이언트 실행
+
+```bash
+/home/super/Downloads/yolo_receiver \
+  --host 172.17.0.2 \
+  --port 9000
+```
+
+### 5.3 컨테이너 IP 확인
+
+```bash
+docker inspect YOLO26_C3 \
+--format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'
+```
+
+</details>
+
+
+
+<details>
+<summary><b>🔍 통신 검증 방법</b></summary>
+
+<br>
+
+## 6. 데이터 전송 검증
+
+### 모니터 실행
+
+```bash
+python3 /home/super/c3_yolo26_pipeline/comm_monitor.py \
+  --host 172.17.0.2 \
+  --port 9000
+```
+
+옵션:
+
+```text
+--max-frames N
+--full
+--logs
+```
+
+### 예시 출력
+
+<img width="1111" height="627" alt="client" src="https://github.com/user-attachments/assets/0a68eb0f-1bbb-4435-b93a-d2adde433f8c" />
+
+<img width="1414" height="270" alt="server" src="https://github.com/user-attachments/assets/6b50dc72-260c-442a-bdf0-d97a0d966208" />
+
+</details>
+
+
+
+<details>
+<summary><b>⚠️ 알려진 동작 및 유의사항</b></summary>
+
+<br>
+
+## 7. 알려진 동작
+
+### 7.1 `entry` 필드
+
+현재 버전은 사용하지 않으며 구조 호환을 위해 빈 배열만 유지
+
+```json
+{
+  "entry": []
+}
+```
+
+### 7.2 시작 직후 1회 재연결
+
+초기 프레임 생성 전 `queue.Empty` 타임아웃으로 인해 최초 1회 재연결이 발생할 수 있음
+
+### 7.3 컨테이너 IP
+
+포트 publish가 되어있지 않으므로
+
+```text
+127.0.0.1 ❌
+172.17.x.x ⭕
+```
+
+사용 필요
+
+</details>
+
+
+
+<details>
+<summary><b>📁 관련 파일</b></summary>
+
+<br>
+
+| 파일 | 역할 |
+|------|------|
+| `traffic_tracker.py` | AI 서버 (분석 + TCP 송신) |
+| `~/Downloads/yolo_receiver.cpp` | C++ 수신 클라이언트 |
+| `comm_monitor.py` | TCP 수신 검증 모니터 |
+| `cctv-traffic.json` | 현재 프레임 결과 |
+| `cctv-traffic-vds.json` | VDS 결과 |
+| `cctv-traffic-log.jsonl` | 전체 프레임 로그 |
+
+</details>
+
+</details>
+
+
+
 
 ## 결과물
 
