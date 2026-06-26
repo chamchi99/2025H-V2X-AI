@@ -73,6 +73,11 @@ docker exec -w /workspace KETI_AI \
 docker exec KETI_AI pkill -f traffic_tracker.py
 ```
 
+<img width="1416" height="727" alt="image" src="https://github.com/user-attachments/assets/b688a735-5d56-4acd-82d9-6ad512013dd0" />
+<p><i>파이프라인 정상 실행 시 표출 화면 예시</i></p>
+
+
+
 **자주 쓰는 옵션**
 
 | 옵션 | 설명 | 기본값 |
@@ -97,6 +102,8 @@ BEV 글로벌 맵(`etri_mapbox.html`)은 같은 디렉터리의 이 파일을 �
 python3 -m http.server 8000
 # 브라우저에서 → http://localhost:8000/etri_mapbox.html
 ```
+<img width="1557" height="820" alt="image" src="https://github.com/user-attachments/assets/43a6a6dc-f633-4bb7-944e-0b1cf062c813" />
+<p><i>BEV 맵 정상 구동 시 표출 화면 예시</i></p>
 
 ---
 
@@ -247,6 +254,7 @@ CCTV 3채널 영상을 입력으로 받아, 검출 → 추적 → 좌표 변환 
 
 ---
 
+
 ## TCP 소켓 통신 기능
 
 <details>
@@ -359,7 +367,7 @@ push_result(dict)  →  data_queue (maxsize=30, FIFO, 가득 차면 오래된 �
     "frame_end_time": 1750...,
     "frame_idx": 2
   },
-  "entry": [],
+  "entry": [],              // 현재 미사용, 구조 호환을 위해 빈 배열 유지
   "vds": [...]
 }
 ```
@@ -379,11 +387,13 @@ push_result(dict)  →  data_queue (maxsize=30, FIFO, 가득 차면 오래된 �
 
 ### 3.3 디스크 저장 파일
 
+TCP 송신과 별개로, 분석 결과는 동시에 디스크에도 저장된다.
+
 | 파일 | 내용 |
 |------|------|
 | `cctv-traffic.json` | 현재 프레임 스냅샷 |
 | `cctv-traffic-vds.json` | 차선별 교통량 |
-| `cctv-traffic-log.jsonl` | 전체 프레임 로그 |
+| `cctv-traffic-log.jsonl` | 전체 프레임 로그 (누적) |
 
 저장 위치:
 
@@ -397,11 +407,34 @@ push_result(dict)  →  data_queue (maxsize=30, FIFO, 가득 차면 오래된 �
 
 
 <details>
+<summary><b>💾 C++ 클라이언트 수신 데이터 보관 위치</b></summary>
+
+<br>
+
+## 4. C++ 클라이언트 수신 데이터 보관 위치
+
+수신된 JSON이 C++ 메모리 어디에 보관되는지 **다운스트림 V2X 연동 시 반드시 확인**해야 한다.
+
+| 페이로드 타입 | 보관 위치 | 비고 |
+|--------------|-----------|------|
+| `frame_update` | `g_latest_frame_data` (전역 `std::string`) | 최신 프레임 1개만 유지, 파일 저장 없음 |
+| `console_logs` | 저장 안 됨 | 터미널 출력 후 소멸 |
+
+**주의사항:**
+- `g_latest_frame_data`는 새 프레임 수신 시 **덮어쓰기** (누적 아님)
+- **mutex 없음** — 멀티스레드 환경에서 이 변수를 읽을 때 race condition 주의
+- 프로세스 종료 시 데이터 소멸
+
+</details>
+
+
+
+<details>
 <summary><b>🚀 전체 파이프라인 및 실행 방법</b></summary>
 
 <br>
 
-## 4. 전체 파이프라인
+## 5. 전체 파이프라인
 
 ```text
 3캠 영상 (camera1/2/3)
@@ -414,26 +447,27 @@ push_result(dict)  →  data_queue (maxsize=30, FIFO, 가득 차면 오래된 �
    ▼ Cross-camera 중복 제거
    ▼ 클래스 평활화
    │
-   ├──▶ JSON 저장
+   ├──▶ JSON 저장 (디스크)
    └──▶ TCP :9000 송신
              │
              ▼
       yolo_receiver.cpp
+      (g_latest_frame_data에 최신 프레임 1개 보관)
              │
              ▼
       다운스트림 V2X
 ```
 
-## 5. 실행 방법
+## 6. 실행 방법
 
-### 5.0 최초 1회 컴파일
+### 6.1 최초 1회 컴파일
 
 ```bash
 g++ -O2 -pthread /home/super/Downloads/yolo_receiver.cpp \
 -o /home/super/Downloads/yolo_receiver
 ```
 
-### 5.1 Python 서버 실행
+### 6.2 Python 서버 실행
 
 ```bash
 docker exec -w /workspace YOLO26_C3 python traffic_tracker.py \
@@ -443,7 +477,8 @@ docker exec -w /workspace YOLO26_C3 python traffic_tracker.py \
   --save-vid
 ```
 
-### 5.2 C++ 클라이언트 실행
+
+### 6.3 C++ 클라이언트 실행
 
 ```bash
 /home/super/Downloads/yolo_receiver \
@@ -451,7 +486,26 @@ docker exec -w /workspace YOLO26_C3 python traffic_tracker.py \
   --port 9000
 ```
 
-### 5.3 컨테이너 IP 확인
+
+
+### 예시 출력
+ 
+**Python AI 서버 (`traffic_tracker.py`)**
+ 
+<img width="1414" height="270" alt="server" src="https://github.com/user-attachments/assets/6b50dc72-260c-442a-bdf0-d97a0d966208" />
+<p><i>C++ 수신 클라이언트 미연결 시 대기 화면</i></p>
+<img width="1406" height="420" alt="server-connected" src="https://github.com/user-attachments/assets/75ebc355-c91d-46ea-b5d4-58ae9164f521" />
+<p><i>C++ 수신 클라이언트 정상 연결 시 작동 화면</i></p>
+
+**C++ 수신 클라이언트 (`yolo_receiver`)**
+ 
+<img width="1397" height="655" alt="client-waiting" src="https://github.com/user-attachments/assets/0d658933-7bed-41a0-92e1-dc9aba4b0d19" />
+<p><i>AI 시스템(Python) 미연결 시 대기 화면</i></p>
+<img width="1539" height="686" alt="client-connected" src="https://github.com/user-attachments/assets/d353bde5-e9c6-4b5a-953b-f3ced501af68" />
+<p><i>AI 시스템(Python) 정상 연결 시 작동 화면</i></p>
+
+
+### 6.4 컨테이너 IP 확인
 
 ```bash
 docker inspect YOLO26_C3 \
@@ -467,7 +521,7 @@ docker inspect YOLO26_C3 \
 
 <br>
 
-## 6. 데이터 전송 검증
+## 7. 데이터 전송 검증
 
 ### 모니터 실행
 
@@ -479,17 +533,17 @@ python3 /home/super/c3_yolo26_pipeline/comm_monitor.py \
 
 옵션:
 
-```text
---max-frames N
---full
---logs
-```
+| 옵션 | 설명 |
+|------|------|
+| `--max-frames N` | 수신할 최대 프레임 수 |
+| `--full` | 전체 JSON 출력 |
+| `--logs` | console_logs 페이로드 출력 |
 
 ### 예시 출력
 
 <img width="1111" height="627" alt="client" src="https://github.com/user-attachments/assets/0a68eb0f-1bbb-4435-b93a-d2adde433f8c" />
 
-<img width="1414" height="270" alt="server" src="https://github.com/user-attachments/assets/6b50dc72-260c-442a-bdf0-d97a0d966208" />
+
 
 </details>
 
@@ -500,23 +554,13 @@ python3 /home/super/c3_yolo26_pipeline/comm_monitor.py \
 
 <br>
 
-## 7. 알려진 동작
+## 8. 알려진 동작
 
-### 7.1 `entry` 필드
+### 8.1 시작 직후 1회 재연결
 
-현재 버전은 사용하지 않으며 구조 호환을 위해 빈 배열만 유지
+초기 프레임 생성 전 `queue.Empty` 타임아웃으로 인해 최초 1회 재연결이 발생할 수 있음. 정상 동작이므로 무시해도 됨.
 
-```json
-{
-  "entry": []
-}
-```
-
-### 7.2 시작 직후 1회 재연결
-
-초기 프레임 생성 전 `queue.Empty` 타임아웃으로 인해 최초 1회 재연결이 발생할 수 있음
-
-### 7.3 컨테이너 IP
+### 8.2 컨테이너 IP
 
 포트 publish가 되어있지 않으므로
 
@@ -525,7 +569,9 @@ python3 /home/super/c3_yolo26_pipeline/comm_monitor.py \
 172.17.x.x ⭕
 ```
 
-사용 필요
+### 8.3 클라이언트 동시 접속 제한
+
+서버는 `listen(1)`로 구성되어 있어 **동시에 1개 클라이언트만 허용**한다. 두 번째 클라이언트 접속 시 연결이 거부된다.
 
 </details>
 
