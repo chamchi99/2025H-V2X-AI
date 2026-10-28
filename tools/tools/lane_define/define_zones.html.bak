@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>Zone 정의 도구 (cam1/cam2/cam3 통합)</title>
+<style>
+* { margin:0; padding:0; box-sizing:border-box; }
+body { background:#111; color:#eee; font-family:monospace; display:flex; }
+#sidebar {
+  width:300px; min-height:100vh; background:#1a1a2e;
+  padding:12px; flex-shrink:0; overflow-y:auto;
+}
+#sidebar h2 { font-size:14px; margin-bottom:6px; color:#7dd3fc; }
+.hint { font-size:10px; color:#64748b; margin-bottom:10px; line-height:1.5; }
+.poly-section { margin-bottom:10px; }
+.poly-title { font-size:12px; font-weight:bold; margin-bottom:2px; }
+.poly-pts { font-size:10px; color:#94a3b8; max-height:70px; overflow-y:auto; word-break:break-all; margin-bottom:3px; }
+.btn { display:block; width:100%; padding:6px; margin:4px 0;
+  background:#334155; border:none; color:#eee; cursor:pointer;
+  font-family:monospace; font-size:11px; border-radius:4px; }
+.btn:hover { background:#475569; }
+.btn.active { background:#1d4ed8; }
+select { background:#334155; color:#eee; border:none; font-family:monospace; font-size:11px; padding:3px; border-radius:4px; }
+.row { margin:6px 0; font-size:11px; color:#94a3b8; }
+.output { background:#0f172a; padding:8px; border-radius:4px;
+  font-size:10px; color:#10b981; white-space:pre-wrap;
+  max-height:320px; overflow-y:auto; margin-top:8px; }
+#canvasWrap { flex:1; overflow:auto; position:relative; }
+canvas { display:block; cursor:crosshair; }
+#info { position:fixed; bottom:8px; left:312px;
+  background:rgba(0,0,0,0.7); padding:4px 10px;
+  font-size:11px; border-radius:4px; }
+</style>
+</head>
+<body>
+<div id="sidebar">
+  <h2>Zone 정의 도구</h2>
+  <div class="hint">
+    좌클릭: 점 추가 &nbsp; 우클릭: 마지막 점 취소<br>
+    아래에서 편집할 구역을 "선택" 후 클릭<br>
+    cam1 = 1·2차선 region / cam2·cam3 = 보행자 구역
+  </div>
+
+  <div class="row">카메라:
+    <select id="camSel">
+      <option value="cam1">cam1</option>
+      <option value="cam2" selected>cam2</option>
+      <option value="cam3">cam3</option>
+    </select>
+  </div>
+  <div class="row" id="targetNote" style="color:#64748b;"></div>
+
+  <hr style="border-color:#334155;margin:8px 0;">
+  <div id="polyControls"></div>
+
+  <hr style="border-color:#334155;margin:8px 0;">
+  <button class="btn" onclick="clearCurrent()">현재 구역 비우기</button>
+  <button class="btn" onclick="resetCurrentCam()">이 카메라 초기값 복원</button>
+  <button class="btn" onclick="generateCode()" style="background:#065f46;">코드 생성</button>
+  <div class="output" id="output">구역을 정의한 뒤 "코드 생성" 클릭</div>
+</div>
+
+<div id="canvasWrap">
+  <canvas id="canvas"></canvas>
+</div>
+<div id="info">좌표: -</div>
+
+<script>
+// ============================================================
+//  카메라별 구역 정의 (초기값 = 현재 ch_setting_comb.py 값)
+//  var  : ch_setting_comb.py 에 들어갈 변수명 그대로
+//  init : 편집 시작점 (현재 좌표). 새로 그리려면 "비우기" 후 클릭
+// ============================================================
+const IMG_DIR = '../../../doc/_debug_artifacts';
+
+const CAMERAS = {
+  cam1: {
+    image: IMG_DIR + '/frame_camera1.jpg',
+    target: 'cam1_lanes(정차차량 차선 점유율) + 보행자 구역(ped_zone). ' +
+            'sidewalk/road 는 연석 라인 (851,0)–(1919,1006) 을 공유해 이분할 (횡단보도 없음)',
+    polys: [
+      { var:'lane1_cam1', label:'차선1 (좌측)',  color:'#3b82f6',
+        init:[[568,52],[439,1076],[1134,1076],[710,40],[571,53]] },
+      { var:'lane2_cam1', label:'차선2 (우측)',  color:'#ef4444',
+        init:[[725,45],[1171,1076],[1844,1078],[851,34],[728,44]] },
+      { var:'sidewalk_cam1',  label:'sidewalk (인도, 연석 우측상단)', dest:'ped_zone(인도/차도)', color:'#22c55e',
+        init:[[851,0],[1919,0],[1919,1006]] },
+      { var:'road_cam1',      label:'road (차도, 연석 좌측하단)',    dest:'ped_zone(인도/차도)', color:'#f87171',
+        init:[[851,0],[1919,1006],[1919,1079],[0,1079],[0,0]] },
+    ],
+  },
+  cam2: {
+    image: IMG_DIR + '/frame_camera2.jpg',
+    target: 'cam2 — 검출/추적(ch_line_rotate 내부) + 보행자 구역(하단)',
+    polys: [
+      { var:'mask',   label:'검출 마스크',  dest:'ch_line_rotate() 내부', color:'#22d3ee',
+        init:[[1,643],[738,531],[531,249],[988,184],[1918,560],[1918,1078],[1,1075],[3,648]] },
+      { var:'lane_1', label:'Re-ID 대상 차선', dest:'ch_line_rotate() 내부', color:'#a78bfa',
+        init:[[632,233],[986,184],[1916,566],[1916,1076],[3,1078],[4,820],[1040,602],[634,238]] },
+      { var:'parking_cam2', label:'주차구역 (검출 제외)', dest:'ch_line_rotate() 내부 — 이 안의 차량은 미검출', color:'#fb923c',
+        init:[] },
+      { var:'sidewalk_cam2',  label:'sidewalk (인도)',      dest:'하단 보행자 구역', color:'#22c55e',
+        init:[[6,643],[753,529],[544,272],[643,249],[1006,619],[1,761]] },
+      { var:'crosswalk_cam2', label:'crosswalk (횡단보도)', dest:'하단 보행자 구역', color:'#facc15',
+        init:[[460,1076],[539,735],[960,663],[954,1073]] },
+      { var:'road_cam2',      label:'road (차도)',          dest:'하단 보행자 구역', color:'#f87171',
+        init:[[632,233],[986,184],[1916,566],[1916,1076],[3,1078],[4,820],[1040,602]] },
+    ],
+  },
+  cam3: {
+    image: IMG_DIR + '/frame_camera3.jpg',
+    target: '보행자 구역 (cam3). road_cam3=None → sidewalk/crosswalk 아닌 나머지 전부가 road',
+    polys: [
+      { var:'sidewalk_cam3',  label:'sidewalk (인도)',      color:'#22c55e',
+        init:[[647,697],[1271,712],[1303,1073],[650,1076]] },
+      { var:'crosswalk_cam3', label:'crosswalk (횡단보도)', color:'#facc15',
+        init:[[692,679],[836,3],[1341,4],[1271,709]] },
+    ],
+  },
+};
+
+let camId   = 'cam2';
+let polys   = [];              // 현재 카메라의 poly 정의 목록
+let points  = {};              // var -> [[x,y],...]
+let current = null;            // 현재 편집중인 var
+let img     = new Image();
+const canvas = document.getElementById('canvas');
+const ctx    = canvas.getContext('2d');
+
+function deepCopy(o) { return JSON.parse(JSON.stringify(o)); }
+
+function loadCamera(id) {
+  camId   = id;
+  polys   = CAMERAS[id].polys;
+  points  = {};
+  polys.forEach(p => points[p.var] = deepCopy(p.init));
+  current = polys[0].var;
+  document.getElementById('targetNote').textContent = '→ ' + CAMERAS[id].target;
+  buildSidebar();
+  img.src = CAMERAS[id].image + '?t=' + Date.now();   // onload에서 canvas 크기+draw
+}
+
+function buildSidebar() {
+  const ctrl = document.getElementById('polyControls');
+  ctrl.innerHTML = '';
+  polys.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'poly-section';
+    div.innerHTML = `
+      <div class="poly-title" style="color:${p.color}">▶ ${p.label} <span style="color:#64748b">(${p.var})</span></div>
+      <div class="poly-pts" id="pts_${p.var}"></div>
+      <button class="btn ${p.var===current?'active':''}" id="btn_${p.var}"
+        onclick="selectPoly('${p.var}')">선택</button>`;
+    ctrl.appendChild(div);
+  });
+  updatePtCount();
+}
+
+function selectPoly(v) {
+  current = v;
+  polys.forEach(p => {
+    const b = document.getElementById('btn_'+p.var);
+    if (b) b.classList.toggle('active', p.var===v);
+  });
+  draw();
+}
+
+function updatePtCount() {
+  polys.forEach(p => {
+    const el = document.getElementById('pts_'+p.var);
+    if (el) el.textContent = points[p.var].length + ' pts: ' +
+      points[p.var].map(pt=>`(${pt[0]},${pt[1]})`).join(' ');
+  });
+}
+
+img.onload = () => {
+  canvas.width  = img.width;
+  canvas.height = img.height;
+  draw();
+};
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+canvas.addEventListener('mousedown', e => {
+  const [x, y] = toImg(e);
+  if (e.button === 0)      points[current].push([x, y]);
+  else if (e.button === 2) points[current].pop();
+  updatePtCount();
+  draw();
+});
+canvas.addEventListener('mousemove', e => {
+  const [x, y] = toImg(e);
+  document.getElementById('info').textContent = `좌표: (${x}, ${y})`;
+});
+
+function toImg(e) {
+  const rect = canvas.getBoundingClientRect();
+  const sx = canvas.width  / rect.width;
+  const sy = canvas.height / rect.height;
+  return [Math.round((e.clientX - rect.left) * sx),
+          Math.round((e.clientY - rect.top)  * sy)];
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(img, 0, 0);
+  polys.forEach(p => {
+    const pts = points[p.var];
+    if (!pts || pts.length === 0) return;
+    const isCur = p.var === current;
+    ctx.strokeStyle = p.color;
+    ctx.fillStyle   = p.color + '33';
+    ctx.lineWidth   = isCur ? 3 : 1.5;
+    ctx.setLineDash(isCur ? [] : [6,3]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    pts.forEach(pt => ctx.lineTo(pt[0], pt[1]));
+    if (pts.length > 2) ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.setLineDash([]);
+    pts.forEach((pt, i) => {
+      ctx.fillStyle = p.color;
+      ctx.beginPath();
+      ctx.arc(pt[0], pt[1], isCur ? 6 : 3, 0, Math.PI*2);
+      ctx.fill();
+      if (isCur) {
+        ctx.fillStyle = '#fff';
+        ctx.font = 'bold 13px monospace';
+        ctx.fillText(i, pt[0]+8, pt[1]-5);
+      }
+    });
+    const cx = pts.reduce((s,q)=>s+q[0],0)/pts.length;
+    const cy = pts.reduce((s,q)=>s+q[1],0)/pts.length;
+    ctx.fillStyle = p.color;
+    ctx.font = 'bold 15px monospace';
+    ctx.fillText(p.label, cx-30, cy);
+  });
+}
+
+function clearCurrent() {
+  points[current] = [];
+  updatePtCount();
+  draw();
+}
+
+function resetCurrentCam() {
+  polys.forEach(p => points[p.var] = deepCopy(p.init));
+  updatePtCount();
+  draw();
+}
+
+function generateCode() {
+  let code = `# ch_setting_comb.py 에 붙여넣기 (${camId})\n`;
+  code += `# 대상: ${CAMERAS[camId].target}\n\n`;
+  polys.forEach(p => {
+    const pts = points[p.var];
+    if (!pts || pts.length < 3) { code += `# ${p.var}: 미정의 (최소 3점 필요)\n\n`; return; }
+    const arr = pts.map(pt=>`[${pt[0]},${pt[1]}]`).join(',');
+    if (p.dest) code += `# → ${p.dest}\n`;
+    code += `${p.var} = np.array([${arr}], np.int32)\n\n`;
+  });
+  if (camId === 'cam1') code += `cam1_lanes = [lane1_cam1, lane2_cam1]\n`;
+  if (camId === 'cam3') code += `road_cam3 = None  # sidewalk/crosswalk 아닌 나머지 전부 = road\n`;
+  document.getElementById('output').textContent = code;
+}
+
+// 카메라 셀렉트
+document.getElementById('camSel').addEventListener('change', e => loadCamera(e.target.value));
+
+// 초기 로드 (기본 cam2)
+loadCamera('cam2');
+</script>
+</body>
+</html>

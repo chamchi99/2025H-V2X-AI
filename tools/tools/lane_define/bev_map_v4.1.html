@@ -1,0 +1,1312 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ETRI Multi-Camera BEV Map</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Noto+Sans+KR:wght@300;400;600;700&display=swap');
+
+  :root {
+    --bg-primary: #0a0e17;
+    --bg-secondary: #111827;
+    --bg-card: #1a2332;
+    --accent-blue: #3b82f6;
+    --accent-cyan: #06b6d4;
+    --accent-green: #10b981;
+    --accent-amber: #f59e0b;
+    --accent-red: #ef4444;
+    --accent-purple: #8b5cf6;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-dim: #475569;
+    --border: #1e293b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans KR', sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow: hidden;
+  }
+
+  .header {
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: linear-gradient(180deg, rgba(59, 130, 246, 0.04) 0%, transparent 100%);
+    height: 56px;
+  }
+
+  .header-icon {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--accent-blue), var(--accent-cyan));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  }
+
+  .header h1 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px; font-weight: 700;
+  }
+  .header h1 span { color: var(--accent-cyan); }
+
+  .header-meta {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; color: var(--text-dim);
+  }
+
+  .main-layout {
+    display: grid;
+    grid-template-columns: 1fr 280px;
+    height: calc(100vh - 56px);
+  }
+
+  .map-container {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .sidebar {
+    border-left: 1px solid var(--border);
+    background: var(--bg-card);
+    overflow-y: auto;
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+  }
+
+  .panel-title {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.2px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .panel-title::before {
+    content: ''; width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent-cyan);
+    box-shadow: 0 0 6px var(--accent-cyan);
+  }
+
+  .cam-toggle {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; border-radius: 6px;
+    cursor: pointer; transition: background 0.15s;
+    font-size: 12px; margin-bottom: 4px;
+    user-select: none;
+  }
+  .cam-toggle:hover { background: rgba(59, 130, 246, 0.08); }
+  .cam-toggle.off { opacity: 0.35; }
+
+  .cam-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+  }
+  .cam-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600; font-size: 11px;
+  }
+  .cam-error {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px; color: var(--text-dim);
+    background: var(--bg-primary); padding: 1px 5px; border-radius: 3px;
+  }
+
+  .layer-toggle {
+    display: flex; align-items: center; gap: 8px;
+    padding: 5px 8px; border-radius: 5px;
+    cursor: pointer; transition: background 0.15s;
+    font-size: 11px; margin-bottom: 3px;
+    user-select: none; color: var(--text-secondary);
+  }
+  .layer-toggle:hover { background: rgba(59, 130, 246, 0.08); }
+  .layer-toggle.off { opacity: 0.35; }
+
+  .layer-check {
+    width: 14px; height: 14px; border-radius: 3px;
+    border: 1.5px solid var(--text-dim);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 9px; flex-shrink: 0; transition: all 0.15s;
+  }
+  .layer-toggle:not(.off) .layer-check {
+    background: var(--accent-cyan);
+    border-color: var(--accent-cyan);
+    color: white;
+  }
+
+  .info-row {
+    display: flex; justify-content: space-between;
+    padding: 4px 0; font-size: 11px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+  }
+  .info-label { color: var(--text-dim); }
+  .info-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600; font-size: 10px;
+  }
+
+  .controls {
+    position: absolute; bottom: 16px; left: 16px;
+    display: flex; gap: 4px;
+  }
+  .ctrl-btn {
+    width: 32px; height: 32px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 6px; color: var(--text-secondary);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    font-size: 14px; transition: all 0.15s;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .ctrl-btn:hover {
+    background: var(--accent-blue); color: white; border-color: var(--accent-blue);
+  }
+
+  .status-bar {
+    position: absolute; bottom: 16px; right: 296px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px; color: var(--text-dim);
+    background: var(--bg-card); border: 1px solid var(--border);
+    padding: 4px 10px; border-radius: 5px;
+  }
+
+  .tooltip {
+    position: fixed;
+    background: var(--bg-card); border: 1px solid var(--accent-cyan);
+    border-radius: 6px; padding: 8px 12px;
+    font-family: 'JetBrains Mono', monospace; font-size: 10px;
+    pointer-events: none; opacity: 0; transition: opacity 0.12s;
+    z-index: 100; box-shadow: 0 6px 20px rgba(0,0,0,0.5); max-width: 200px;
+  }
+  .tooltip.visible { opacity: 1; }
+  .tooltip-title { font-weight: 700; color: var(--accent-cyan); margin-bottom: 3px; }
+  .tooltip-coord { color: var(--text-secondary); font-size: 9px; line-height: 1.5; }
+
+  ::-webkit-scrollbar { width: 3px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-icon">📡</div>
+  <h1>ETRI <span>BEV</span> Multi-Camera Map</h1>
+  <div class="header-meta">RTK-GPS · 3 Cameras · 20 GCPs</div>
+</div>
+
+<div class="main-layout">
+  <div class="map-container">
+    <canvas id="bevCanvas"></canvas>
+    <div class="controls">
+      <button class="ctrl-btn" onclick="zoomIn()" title="Zoom In">+</button>
+      <button class="ctrl-btn" onclick="zoomOut()" title="Zoom Out">−</button>
+      <button class="ctrl-btn" onclick="resetView()" title="Reset">⟲</button>
+    </div>
+    <div class="status-bar" id="statusBar">hover over map</div>
+    <div class="tooltip" id="tooltip">
+      <div class="tooltip-title"></div>
+      <div class="tooltip-coord"></div>
+    </div>
+  </div>
+
+  <div class="sidebar">
+    <div class="panel">
+      <div class="panel-title">카메라</div>
+      <div class="cam-toggle" data-cam="0" onclick="toggleCam(0)">
+        <div class="cam-dot" style="background:#3b82f6"></div>
+        <span class="cam-label">CAM 101</span>
+        <span class="cam-error">±40cm</span>
+      </div>
+      <div class="cam-toggle" data-cam="1" onclick="toggleCam(1)">
+        <div class="cam-dot" style="background:#10b981"></div>
+        <span class="cam-label">CAM 202</span>
+        <span class="cam-error">±28cm</span>
+      </div>
+      <div class="cam-toggle" data-cam="2" onclick="toggleCam(2)">
+        <div class="cam-dot" style="background:#f59e0b"></div>
+        <span class="cam-label">CAM 203</span>
+        <span class="cam-error">±4cm</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">레이어</div>
+      <div class="layer-toggle" onclick="toggleLayer('fov')">
+        <div class="layer-check">✓</div>
+        <span>FOV 영역</span>
+      </div>
+      <div class="layer-toggle" onclick="toggleLayer('gcps')">
+        <div class="layer-check">✓</div>
+        <span>기준점 (GCP)</span>
+      </div>
+      <div class="layer-toggle" onclick="toggleLayer('lanes')">
+        <div class="layer-check">✓</div>
+        <span>도로 / 차선</span>
+      </div>
+      <div class="layer-toggle" onclick="toggleLayer('crosswalk')">
+        <div class="layer-check">✓</div>
+        <span>횡단보도</span>
+      </div>
+      <div class="layer-toggle" onclick="toggleLayer('sidewalk')">
+        <div class="layer-check">✓</div>
+        <span>보도 / 인도</span>
+      </div>
+      <div class="layer-toggle" onclick="toggleLayer('grid')">
+        <div class="layer-check">✓</div>
+        <span>그리드</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">정보</div>
+      <div class="info-row">
+        <span class="info-label">좌표계</span>
+        <span class="info-value">WGS84 → Local</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">기준점</span>
+        <span class="info-value">(36.38234, 127.36670)</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">측정</span>
+        <span class="info-value">RTK 3D Fix</span>
+      </div>
+      <div class="info-row">
+        <span class="info-label">날짜</span>
+        <span class="info-value">2025-11-19</span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-title">실시간 객체</div>
+      <div style="display:flex; align-items:center; gap:6px; margin-bottom:8px;">
+        <div id="liveIndicator" style="width:8px;height:8px;border-radius:50%;background:#ef4444;"></div>
+        <span id="liveStatus" style="font-family:'JetBrains Mono';font-size:10px;color:var(--text-dim);">JSON 대기중...</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-bottom:8px;">
+        <button onclick="loadJSON()" class="ctrl-btn" style="width:auto;padding:0 8px;font-size:10px;height:26px;">JSON 로드</button>
+        <button onclick="toggleAutoPolling()" id="pollBtn" class="ctrl-btn" style="width:auto;padding:0 8px;font-size:10px;height:26px;">자동 폴링 ON</button>
+      </div>
+      <div id="objectList" style="font-size:10px; color:var(--text-secondary); padding:4px 0; max-height:180px; overflow-y:auto; font-family:'JetBrains Mono',monospace;">
+        JSON 파일을 로드하세요
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// CONFIG
+// ============================================================
+const REF_LAT = 36.38234, REF_LON = 127.36670;
+const M_PER_DEG_LAT = 111320;
+const M_PER_DEG_LON = 111320 * Math.cos(REF_LAT * Math.PI / 180);
+
+function gps2m(lat, lon) {
+  return { x: (lon - REF_LON) * M_PER_DEG_LON, y: (lat - REF_LAT) * M_PER_DEG_LAT };
+}
+function m2gps(mx, my) {
+  return { lat: REF_LAT + my / M_PER_DEG_LAT, lon: REF_LON + mx / M_PER_DEG_LON };
+}
+
+// ============================================================
+// CAMERA DATA
+// ============================================================
+const cameras = [
+  {
+    name: "CAM 101", color: "#3b82f6", rgba: "rgba(59,130,246,",
+    gcps: [
+      { px:[483,813], lat:36.38230067, lon:127.36666917 },
+      { px:[1362,751], lat:36.38235250, lon:127.36666900 },
+      { px:[566,356], lat:36.38229583, lon:127.36644383 },
+      { px:[939,336], lat:36.38236133, lon:127.36644267 },
+      { px:[582,260], lat:36.38230683, lon:127.36626617 },
+      { px:[854,252], lat:36.38236050, lon:127.36626050 },
+    ],
+    fov: [
+      { lat: 36.38227, lon: 127.36670 },
+      { lat: 36.38238, lon: 127.36670 },
+      { lat: 36.38238, lon: 127.36622 },
+      { lat: 36.38227, lon: 127.36622 },
+    ],
+  },
+  {
+    name: "CAM 202", color: "#10b981", rgba: "rgba(16,185,129,",
+    gcps: [
+      { px:[498,982], lat:36.38233050, lon:127.36684033 },
+      { px:[953,903], lat:36.38232683, lon:127.36687083 },
+      { px:[551,728], lat:36.38235750, lon:127.36685200 },
+      { px:[935,665], lat:36.38236100, lon:127.36688467 },
+      { px:[981,569], lat:36.38238283, lon:127.36689733 },
+      { px:[1845,502], lat:36.38238033, lon:127.36702050 },
+      { px:[585,220], lat:36.38264700, lon:127.36689767 },
+      { px:[1002,215], lat:36.38264483, lon:127.36700833 },
+    ],
+    fov: [
+      { lat: 36.38230, lon: 127.36682 },
+      { lat: 36.38230, lon: 127.36705 },
+      { lat: 36.38268, lon: 127.36705 },
+      { lat: 36.38268, lon: 127.36686 },
+    ],
+  },
+  {
+    name: "CAM 203", color: "#f59e0b", rgba: "rgba(245,158,11,",
+    gcps: [
+      { px:[678,1039], lat:36.38227883, lon:127.36682933 },
+      { px:[1229,977], lat:36.38227867, lon:127.36684817 },
+      { px:[698,642], lat:36.38229550, lon:127.36683100 },
+      { px:[1217,574], lat:36.38229567, lon:127.36685350 },
+      { px:[812,120], lat:36.38233150, lon:127.36684000 },
+      { px:[1277,75], lat:36.38233217, lon:127.36687117 },
+    ],
+    fov: [
+      { lat: 36.38226, lon: 127.36681 },
+      { lat: 36.38226, lon: 127.36689 },
+      { lat: 36.38235, lon: 127.36689 },
+      { lat: 36.38235, lon: 127.36681 },
+    ],
+  }
+];
+
+cameras.forEach(cam => {
+  cam.gcps.forEach(g => { const m = gps2m(g.lat, g.lon); g.mx = m.x; g.my = m.y; });
+  cam.fovM = cam.fov.map(p => gps2m(p.lat, p.lon));
+});
+
+// ============================================================
+// MAP INFRASTRUCTURE
+// ============================================================
+// 은행-소나무길 폭:
+//   좌측(남) = CAM101 GCP 1,3,5 → lat ≈ 36.38230
+//   우측(북) = CAM101 GCP 2,4,6 → lat ≈ 36.38236
+//   도로 방향: lon 감소 (서쪽 = 멀리) → lon 증가 (동쪽 = 카메라 가까이)
+//
+// 횡단보도 (도로에 수직, 사선):
+//   하단 = CAM203-3(229550,683100) ~ CAM203-4(229567,685350)
+//   중간 = CAM203-5/6 = CAM202-1/2
+//   상단 = CAM202-3(235750,685200) ~ CAM202-4(236100,688467)
+//   횡단보도 폭 == 은행소나무길 폭
+//
+// CAM101 사진: 좌측=은행나무, 우측=인도+소나무+공터
+// ============================================================
+
+const roads = [
+  {
+    // 은행-소나무길: lat 230~236, lon 622~668
+    label: "은행-소나무길",
+    polygon: [
+      gps2m(36.38230, 127.36668), gps2m(36.38230, 127.36622),
+      gps2m(36.38236, 127.36622), gps2m(36.38236, 127.36668),
+    ],
+    color: "rgba(55, 65, 81, 0.6)",
+  },
+  {
+    // 은행-소나무길 연장: lon 668(도로끝) ~ lon 683(횡단보도 하단)
+    // 같은 도로 폭(lat 230~236)으로 쭉 이어짐
+    label: "",
+    polygon: [
+      gps2m(36.38230, 127.36668),
+      gps2m(36.38230, 127.36685),     // 횡단보도 하단좌 lon 근처까지
+      gps2m(36.38236, 127.36689),     // 횡단보도 상단우 lon 근처까지
+      gps2m(36.38236, 127.36668),
+    ],
+    color: "rgba(55, 65, 81, 0.45)",
+  },
+  {
+    // 주도로 (CAM202 GCP5→7, 6→8)
+    label: "주도로",
+    polygon: [
+      gps2m(36.38238, 127.36690),
+      gps2m(36.38238, 127.36702),
+      gps2m(36.38268, 127.36701),
+      gps2m(36.38268, 127.36690),
+    ],
+    color: "rgba(55, 65, 81, 0.55)",
+  },
+  {
+    // 우측 공터 (CAM202 오른쪽, 주도로 너머)
+    label: "공터",
+    polygon: [
+      gps2m(36.38235, 127.36703),
+      gps2m(36.38235, 127.36718),
+      gps2m(36.38268, 127.36718),
+      gps2m(36.38268, 127.36703),
+    ],
+    color: "rgba(62, 73, 55, 0.2)",
+  },
+];
+
+const lanes = [
+  // === 은행-소나무길 ===
+  // 중앙선 (lat ≈ 233, 1-2번 중간)
+  { points: [gps2m(36.38233, 127.36668), gps2m(36.38233, 127.36622)], style: "center" },
+  // 좌측 가장자리 (lat ≈ 230, GCP 1,3,5)
+  { points: [gps2m(36.38230, 127.36668), gps2m(36.38230, 127.36622)], style: "edge" },
+  // 우측 가장자리 (lat ≈ 236, GCP 2,4,6)
+  { points: [gps2m(36.38236, 127.36668), gps2m(36.38236, 127.36622)], style: "edge" },
+
+  // === 주도로 (CAM202 5-7 / 6-8 라인) ===
+  { points: [gps2m(36.38238, 127.36696), gps2m(36.38268, 127.36696)], style: "center" },
+  { points: [gps2m(36.38238, 127.36690), gps2m(36.38268, 127.36690)], style: "edge" },
+  { points: [gps2m(36.38238, 127.36702), gps2m(36.38268, 127.36701)], style: "edge" },
+  
+  // 정지선
+  { points: [gps2m(36.38238, 127.36690), gps2m(36.38238, 127.36702)], style: "stop" },
+];
+
+const crosswalks = [
+  {
+    // 횡단보도: 폭 == 은행소나무길 폭
+    // 하단 = CAM203 GCP3-4, 상단 = CAM202 GCP3-4
+    polygon: [
+      gps2m(36.38229550, 127.36683100),  // 하단좌 = CAM203-3
+      gps2m(36.38229567, 127.36685350),  // 하단우 = CAM203-4
+      gps2m(36.38236100, 127.36688467),  // 상단우 = CAM202-4
+      gps2m(36.38235750, 127.36685200),  // 상단좌 = CAM202-3
+    ],
+    stripes: 8,
+    direction: "diagonal",
+  },
+];
+
+const sidewalks = [
+  {
+    // 보도블럭: 왼쪽 경계 = CAM203 3번(229550,683100)→1번(227883,682933) 라인
+    // 그 왼쪽은 도로(은행-소나무길 연장), 오른쪽이 보도블럭
+    label: "보도블럭",
+    polygon: [
+      gps2m(36.38229550, 127.36683100),  // CAM203-3 (횡단보도 하단좌)
+      gps2m(36.38227883, 127.36682933),  // CAM203-1 (보도블럭 왼쪽 끝)
+      gps2m(36.38223, 127.36683),
+      gps2m(36.38223, 127.36686),
+      gps2m(36.38225, 127.36687),
+      gps2m(36.38227, 127.36687),
+      gps2m(36.38229, 127.36686),
+      gps2m(36.38229567, 127.36685350),  // CAM203-4 (횡단보도 하단우)
+    ],
+  },
+  {
+    // 은행나무(좌측): 도로 아래(lat<230), 은행-소나무길 구간
+    label: "은행나무",
+    polygon: [
+      gps2m(36.38226, 127.36668),
+      gps2m(36.38226, 127.36622),
+      gps2m(36.38230, 127.36622),
+      gps2m(36.38230, 127.36668),
+    ],
+  },
+  {
+    // 인도(우측): 도로 위(lat>236), 은행-소나무길 구간
+    label: "인도",
+    polygon: [
+      gps2m(36.38236, 127.36668),
+      gps2m(36.38236, 127.36622),
+      gps2m(36.38239, 127.36622),
+      gps2m(36.38239, 127.36668),
+    ],
+  },
+  {
+    // 공터(우측): 인도 너머
+    label: "공터",
+    polygon: [
+      gps2m(36.38239, 127.36668),
+      gps2m(36.38239, 127.36622),
+      gps2m(36.38245, 127.36622),
+      gps2m(36.38245, 127.36668),
+    ],
+  },
+  {
+    // 상단 보도: 횡단보도 상단(CAM202-3,4)에서 주도로(CAM202-5)까지
+    // CAM202-4(236100,688467) → CAM202-5(238283,689733) 곡선 연결
+    label: "보도",
+    polygon: [
+      gps2m(36.38235750, 127.36685200),  // CAM202-3 (횡단보도 상단좌)
+      gps2m(36.38236100, 127.36688467),  // CAM202-4 (횡단보도 상단우)
+      // CAM202 4→5 곡선 (보도 경계가 둥글게 꺾임)
+      gps2m(36.38236800, 127.36689200),  // 곡선 중간1
+      gps2m(36.38237500, 127.36689600),  // 곡선 중간2
+      gps2m(36.38238283, 127.36689733),  // CAM202-5 (주도로 좌측)
+      gps2m(36.38240, 127.36690),
+      gps2m(36.38240, 127.36685),
+    ],
+  },
+];
+
+// ============================================================
+// RENDERING
+// ============================================================
+const canvas = document.getElementById('bevCanvas');
+const ctx = canvas.getContext('2d');
+const tooltip = document.getElementById('tooltip');
+const statusBar = document.getElementById('statusBar');
+
+let W, H;
+let scale = 8;
+let offX, offY;
+let camVis = [true, true, true];
+let layers = { fov: true, gcps: true, lanes: true, crosswalk: true, sidewalk: true, grid: true };
+
+function resize() {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  W = canvas.width = rect.width * devicePixelRatio;
+  H = canvas.height = rect.height * devicePixelRatio;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+}
+
+function w2c(mx, my) {
+  return { cx: offX + mx * scale, cy: offY - my * scale };
+}
+function c2w(cx, cy) {
+  return { mx: (cx - offX) / scale, my: -(cy - offY) / scale };
+}
+
+function drawGrid() {
+  if (!layers.grid) return;
+  const cw = W / devicePixelRatio, ch = H / devicePixelRatio;
+  const step = scale >= 6 ? 5 : scale >= 2 ? 10 : 25;
+  ctx.strokeStyle = 'rgba(59,130,246,0.04)';
+  ctx.lineWidth = 0.5;
+
+  const tl = c2w(0, 0), br = c2w(cw, ch);
+  const x0 = Math.floor(tl.mx / step) * step, x1 = Math.ceil(br.mx / step) * step;
+  const y0 = Math.floor(br.my / step) * step, y1 = Math.ceil(tl.my / step) * step;
+
+  for (let x = x0; x <= x1; x += step) {
+    const { cx } = w2c(x, 0);
+    ctx.beginPath(); ctx.moveTo(cx, 0); ctx.lineTo(cx, ch); ctx.stroke();
+  }
+  for (let y = y0; y <= y1; y += step) {
+    const { cy } = w2c(0, y);
+    ctx.beginPath(); ctx.moveTo(0, cy); ctx.lineTo(cw, cy); ctx.stroke();
+  }
+
+  ctx.font = '8px JetBrains Mono';
+  ctx.fillStyle = 'rgba(148,163,184,0.25)';
+  ctx.textAlign = 'left';
+  for (let x = x0; x <= x1; x += step) {
+    const { cx } = w2c(x, 0);
+    ctx.fillText(`${x}m`, cx + 2, ch - 4);
+  }
+  for (let y = y0; y <= y1; y += step) {
+    const { cy } = w2c(0, y);
+    if (y !== 0) ctx.fillText(`${y}m`, 4, cy - 2);
+  }
+}
+
+function drawPoly(pts, fill, stroke, lw, dash) {
+  ctx.beginPath();
+  const p0 = w2c(pts[0].x, pts[0].y);
+  ctx.moveTo(p0.cx, p0.cy);
+  for (let i = 1; i < pts.length; i++) {
+    const p = w2c(pts[i].x, pts[i].y);
+    ctx.lineTo(p.cx, p.cy);
+  }
+  ctx.closePath();
+  if (fill) { ctx.fillStyle = fill; ctx.fill(); }
+  if (stroke) {
+    ctx.strokeStyle = stroke; ctx.lineWidth = lw || 1;
+    if (dash) ctx.setLineDash(dash);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+}
+
+function drawRoads() {
+  if (!layers.lanes) return;
+  roads.forEach(r => drawPoly(r.polygon, r.color, 'rgba(75,85,99,0.3)', 1));
+
+  ctx.font = '600 9px JetBrains Mono';
+  ctx.fillStyle = 'rgba(148,163,184,0.4)';
+  ctx.textAlign = 'center';
+  roads.forEach(r => {
+    if (!r.label) return;
+    const cx = r.polygon.reduce((s, p) => s + p.x, 0) / r.polygon.length;
+    const cy = r.polygon.reduce((s, p) => s + p.y, 0) / r.polygon.length;
+    const sc = w2c(cx, cy);
+    ctx.save();
+    ctx.translate(sc.cx, sc.cy);
+    if (r.label === "은행-소나무길") ctx.rotate(-Math.PI / 2);
+    ctx.fillText(r.label, 0, 0);
+    ctx.restore();
+  });
+}
+
+function drawLanes() {
+  if (!layers.lanes) return;
+  lanes.forEach(l => {
+    const p0 = w2c(l.points[0].x, l.points[0].y);
+    const p1 = w2c(l.points[1].x, l.points[1].y);
+    ctx.beginPath();
+    ctx.moveTo(p0.cx, p0.cy);
+    ctx.lineTo(p1.cx, p1.cy);
+
+    if (l.style === 'center') {
+      ctx.strokeStyle = 'rgba(250, 204, 21, 0.5)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([]);
+    } else if (l.style === 'edge') {
+      ctx.strokeStyle = 'rgba(241, 245, 249, 0.25)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([]);
+    } else if (l.style === 'stop') {
+      ctx.strokeStyle = 'rgba(241, 245, 249, 0.6)';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([]);
+    } else {
+      ctx.strokeStyle = 'rgba(241, 245, 249, 0.12)';
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([4, 4]);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  });
+}
+
+function drawCrosswalks() {
+  if (!layers.crosswalk) return;
+  crosswalks.forEach(cw => {
+    // Outer boundary
+    drawPoly(cw.polygon, 'rgba(241,245,249,0.05)', 'rgba(241,245,249,0.15)', 1);
+
+    const p = cw.polygon;
+    const n = cw.stripes;
+    // Stripes: interpolate along left edge (p[0]→p[3]) and right edge (p[1]→p[2])
+    // This works for any orientation including diagonal
+    for (let i = 0; i < n; i++) {
+      const t1 = (i + 0.2) / n;
+      const t2 = (i + 0.8) / n;
+
+      const l0 = { x: p[0].x + (p[3].x - p[0].x) * t1, y: p[0].y + (p[3].y - p[0].y) * t1 };
+      const r0 = { x: p[1].x + (p[2].x - p[1].x) * t1, y: p[1].y + (p[2].y - p[1].y) * t1 };
+      const l1 = { x: p[0].x + (p[3].x - p[0].x) * t2, y: p[0].y + (p[3].y - p[0].y) * t2 };
+      const r1 = { x: p[1].x + (p[2].x - p[1].x) * t2, y: p[1].y + (p[2].y - p[1].y) * t2 };
+
+      drawPoly([l0, r0, r1, l1], 'rgba(241, 245, 249, 0.22)', null);
+    }
+  });
+}
+
+function drawSidewalks() {
+  if (!layers.sidewalk) return;
+  sidewalks.forEach(s => {
+    drawPoly(s.polygon, 'rgba(139,92,246,0.08)', 'rgba(139,92,246,0.2)', 1, [3, 3]);
+  });
+  ctx.font = '8px JetBrains Mono';
+  ctx.fillStyle = 'rgba(139,92,246,0.4)';
+  ctx.textAlign = 'center';
+  sidewalks.forEach(s => {
+    const cx = s.polygon.reduce((a, p) => a + p.x, 0) / s.polygon.length;
+    const cy = s.polygon.reduce((a, p) => a + p.y, 0) / s.polygon.length;
+    const sc = w2c(cx, cy);
+    ctx.fillText(s.label, sc.cx, sc.cy + 3);
+  });
+}
+
+function drawFOV() {
+  if (!layers.fov) return;
+  cameras.forEach((cam, i) => {
+    if (!camVis[i]) return;
+    drawPoly(cam.fovM, cam.rgba + '0.07)', cam.rgba + '0.35)', 1.5, [8, 4]);
+    const cx = cam.fovM.reduce((a, p) => a + p.x, 0) / cam.fovM.length;
+    const cy = cam.fovM.reduce((a, p) => a + p.y, 0) / cam.fovM.length;
+    const sc = w2c(cx, cy);
+    ctx.font = '700 10px JetBrains Mono';
+    ctx.fillStyle = cam.rgba + '0.5)';
+    ctx.textAlign = 'center';
+    ctx.fillText(cam.name, sc.cx, sc.cy);
+  });
+}
+
+function drawGCPs() {
+  if (!layers.gcps) return;
+  cameras.forEach((cam, i) => {
+    if (!camVis[i]) return;
+    cam.gcps.forEach((g, gi) => {
+      const { cx, cy } = w2c(g.mx, g.my);
+      const s = 5;
+
+      ctx.fillStyle = cam.color;
+      ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 1;
+      if (i === 0) { 
+        ctx.beginPath();
+        ctx.moveTo(cx, cy - s); ctx.lineTo(cx + s, cy + s*0.6); ctx.lineTo(cx - s, cy + s*0.6);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+      } else if (i === 1) { 
+        ctx.fillRect(cx - s*0.6, cy - s*0.6, s*1.2, s*1.2);
+        ctx.strokeRect(cx - s*0.6, cy - s*0.6, s*1.2, s*1.2);
+      } else { 
+        ctx.beginPath(); ctx.arc(cx, cy, s*0.6, 0, Math.PI*2);
+        ctx.fill(); ctx.stroke();
+      }
+
+      ctx.font = '9px JetBrains Mono';
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      ctx.textAlign = 'left';
+      ctx.fillText(`${gi+1}`, cx + s + 2, cy + 3);
+    });
+  });
+}
+
+function drawCompass() {
+  const x = 30, y = 30;
+  ctx.fillStyle = 'rgba(241,245,249,0.5)';
+  ctx.beginPath();
+  ctx.moveTo(x, y - 14); ctx.lineTo(x - 4, y - 4); ctx.lineTo(x + 4, y - 4);
+  ctx.closePath(); ctx.fill();
+  ctx.font = '700 9px JetBrains Mono';
+  ctx.textAlign = 'center';
+  ctx.fillText('N', x, y - 17);
+}
+
+function drawScaleBar() {
+  const cw = W / devicePixelRatio;
+  const ch = H / devicePixelRatio;
+  const barM = scale >= 6 ? 10 : scale >= 2 ? 20 : 50;
+  const barPx = barM * scale;
+  const x = cw - 20 - barPx, y = ch - 20;
+
+  ctx.strokeStyle = 'rgba(241,245,249,0.35)'; ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + barPx, y);
+  ctx.moveTo(x, y - 3); ctx.lineTo(x, y + 3);
+  ctx.moveTo(x + barPx, y - 3); ctx.lineTo(x + barPx, y + 3);
+  ctx.stroke();
+
+  ctx.font = '9px JetBrains Mono';
+  ctx.fillStyle = 'rgba(241,245,249,0.35)';
+  ctx.textAlign = 'center';
+  ctx.fillText(`${barM}m`, x + barPx / 2, y - 6);
+}
+
+// ============================================================
+// OBJECT SYSTEM: JSON 폴링 + BEV 표시
+// ============================================================
+// 메커니즘:
+// 1. YOLO 모델이 매 프레임마다 cctv-traffic.json 파일 생성
+// 2. BEV 맵이 주기적으로 (또는 수동으로) JSON 파일을 fetch
+// 3. JSON의 gps[lat, lon] → gps2m()으로 로컬 좌표 변환
+// 4. bbox를 호모그래피로 BEV 상의 크기/방향으로 변환하여 표시
+// 5. class, speed 등 메타 정보를 라벨로 표시
+// ============================================================
+
+const CLASS_NAMES = {
+  0: 'person', 1: 'bike', 2: 'car', 3: 'bike', 4: 'truck',
+};
+const CLASS_COLORS = {
+  person: '#34d399', car: '#ef4444', truck: '#f97316',
+  bike: '#eab308',
+};
+const CLASS_SIZES = {
+  person: [0.6, 0.6], car: [1.8, 4.5], truck: [2.5, 8],
+  bike: [0.8, 2],
+};
+
+let liveObjects = [];
+let pollingInterval = null;
+let jsonPath = 'cctv-traffic.json'; // 기본 경로
+
+// 유령 객체 (검출 사라진 후 페이드아웃)
+const ghostObjects = new Map(); // id → { obj, disappearedAt, opacity }
+const GHOST_DURATION = 1500;   // ms - 유지 시간
+const GHOST_MAX_DIST = 8;      // meters - 이 거리 이상 재등장 시 순간이동으로 판단
+
+function updateGhosts(newObjects) {
+  const now = Date.now();
+  const newIds = new Set(newObjects.map(o => o.id));
+
+  // 이번 프레임에서 사라진 객체 → ghost 등록
+  liveObjects.forEach(obj => {
+    if (!newIds.has(obj.id) && !ghostObjects.has(obj.id)) {
+      ghostObjects.set(obj.id, { obj: { ...obj }, disappearedAt: now, opacity: 1.0 });
+    }
+  });
+
+  // 재등장한 객체 처리
+  newObjects.forEach(obj => {
+    if (ghostObjects.has(obj.id)) {
+      const ghost = ghostObjects.get(obj.id);
+      const dx = obj.wx - ghost.obj.wx;
+      const dy = obj.wy - ghost.obj.wy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist > GHOST_MAX_DIST) {
+        // 너무 멀리 재등장 → ghost는 페이드아웃 유지, 새 위치는 신규 등장처럼 처리
+        ghost.disappearedAt = now - GHOST_DURATION * 0.5; // 빠르게 페이드아웃
+      } else {
+        // 가까운 재등장 → ghost 제거 (자연스러운 이동)
+        ghostObjects.delete(obj.id);
+      }
+    }
+  });
+
+  // ghost 투명도 갱신 및 만료 제거
+  ghostObjects.forEach((ghost, id) => {
+    const age = now - ghost.disappearedAt;
+    if (age > GHOST_DURATION) {
+      ghostObjects.delete(id);
+    } else {
+      ghost.opacity = 1.0 - age / GHOST_DURATION;
+    }
+  });
+}
+
+// JSON 파싱: traffic 배열 → liveObjects 배열
+function parseTrafficJSON(data) {
+  if (!data || !data.traffic) return [];
+  return data.traffic.map(t => {
+    const clsName = CLASS_NAMES[t.class] || 'car';
+    const gps = t.GPS || t.gps;
+    const m = gps2m(gps[0], gps[1]);
+    const size = CLASS_SIZES[clsName] || [1.5, 3.5];
+
+    // heading 결정: GPS 기반 heading이 있으면 사용, 없으면 lane 기반 fallback
+    let heading = 0;
+    if (t.heading !== undefined && t.heading !== 999) {
+      heading = t.heading;  // GPS 기반 heading (rad)
+    } else if (t.cctv === 1 || t.cctv === 3) {
+      heading = (t.lane === 1) ? Math.PI : 0;
+    } else if (t.cctv === 2) {
+      heading = (t.lane === 1) ? Math.PI / 2 : -Math.PI / 2;
+    }
+
+    // bbox 크기: 긴 축 = 진행방향, 짧은 축 = 폭 (회전으로 방향 반영)
+    let bboxW = Math.max(size[0], size[1]);  // 긴 축 (차량 길이)
+    let bboxH = Math.min(size[0], size[1]);  // 짧은 축 (차량 폭)
+
+    return {
+      id: `C${t.cctv}-${t.id}`,
+      cctv: t.cctv,
+      cls: clsName,
+      wx: m.x,
+      wy: m.y,
+      lat: gps[0],
+      lon: gps[1],
+      speed: t.speed === 999 ? null : t.speed,
+      lane: t.lane === 999 ? null : t.lane,
+      bboxW: bboxW,   // 도로 방향에 맞춰 swap된 값
+      bboxH: bboxH,
+      heading: heading,
+      timestamp: t.timestamp,
+    };
+  });
+}
+
+// JSON 파일 로드 (fetch 또는 FileReader)
+async function loadJSON() {
+  // 방법 A: 로컬 서버에서 fetch (Python 서버 필요)
+  try {
+    const resp = await fetch(jsonPath + '?t=' + Date.now());
+    if (resp.ok) {
+      const data = await resp.json();
+      const newObjects = parseTrafficJSON(data);
+      updateGhosts(newObjects);
+      liveObjects = newObjects;
+      updateObjectUI();
+      render();
+      return;
+    }
+  } catch(e) {}
+
+  // fetch 실패 시 콘솔에만 로그
+  console.warn('cctv-traffic.json fetch 실패');
+}
+
+// 파일 선택으로 JSON 로드
+function loadJSONFile(file) {
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      liveObjects = parseTrafficJSON(data);
+      updateObjectUI();
+      render();
+    } catch(err) {
+      console.error('JSON parse error:', err);
+    }
+  };
+  reader.readAsText(file);
+}
+
+// 자동 폴링 ON/OFF
+let isPolling = false;
+function toggleAutoPolling() {
+  isPolling = !isPolling;
+  const btn = document.getElementById('pollBtn');
+  if (isPolling) {
+    btn.textContent = '자동 폴링 OFF';
+    pollingInterval = setInterval(loadJSON, 500); // 0.5초 간격
+    document.getElementById('liveIndicator').style.background = '#10b981';
+    document.getElementById('liveStatus').textContent = '폴링 중 (0.5s)';
+  } else {
+    btn.textContent = '자동 폴링 ON';
+    clearInterval(pollingInterval);
+    document.getElementById('liveIndicator').style.background = '#ef4444';
+    document.getElementById('liveStatus').textContent = '폴링 중지';
+  }
+}
+
+// 사이드바 객체 리스트 업데이트
+function updateObjectUI() {
+  const el = document.getElementById('objectList');
+  const ind = document.getElementById('liveIndicator');
+  const st = document.getElementById('liveStatus');
+
+  if (liveObjects.length === 0) {
+    el.innerHTML = '감지된 객체 없음';
+    return;
+  }
+
+  ind.style.background = '#10b981';
+  st.textContent = `${liveObjects.length}개 객체 | ${new Date().toLocaleTimeString()}`;
+
+  el.innerHTML = liveObjects.map(o => {
+    const color = CLASS_COLORS[o.cls] || '#888';
+    const spd = o.speed !== null ? `${o.speed}km/h` : '';
+    const lane = o.lane !== null ? `L${o.lane}` : '';
+    return `<div style="display:flex;align-items:center;gap:4px;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.03);">
+      <span style="color:${color};font-weight:700;">■</span>
+      <span style="color:${color}">${o.cls}</span>
+      <span style="color:var(--text-dim)">#${o.id}</span>
+      <span style="margin-left:auto;color:var(--text-secondary)">${spd} ${lane}</span>
+    </div>`;
+  }).join('');
+}
+
+// ETRI 좌표 기반 데모 데이터
+function loadDemoData() {
+  const demoJSON = {
+    traffic: [
+      // === CAM 101: 은행-소나무길 (lon 방향 도로) ===
+      // 차선1 (lat≈231.5): 동→서 (lon 증가→감소), heading = Math.PI (BEV에서 x- 방향)
+      {
+        cctv: 1, class: 1, id: 101,
+        bbox: [400, 300, 550, 420],
+        gps: [36.38231, 127.36650],
+        speed: 25, lane: 1, timestamp: Date.now()/1000|0
+      },
+      // 차선2 (lat≈234.5): 서→동 (lon 감소→증가), heading = 0 (BEV에서 x+ 방향)
+      {
+        cctv: 1, class: 1, id: 102,
+        bbox: [700, 320, 850, 410],
+        gps: [36.38235, 127.36640],
+        speed: 30, lane: 2, timestamp: Date.now()/1000|0
+      },
+
+      // === CAM 202: 주도로 (lat 방향 도로) ===
+      // 주도로 차선 (lon≈693): 남→북 (lat 증가), heading = Math.PI/2 (BEV에서 y+ 방향)
+      {
+        cctv: 2, class: 1, id: 201,
+        bbox: [600, 400, 800, 580],
+        gps: [36.38248, 127.36693],
+        speed: 15, lane: 1, timestamp: Date.now()/1000|0
+      },
+      // 주도로 반대 차선 (lon≈699): 북→남 (lat 감소), heading = -Math.PI/2
+      {
+        cctv: 2, class: 3, id: 202,
+        bbox: [900, 350, 1200, 550],
+        gps: [36.38258, 127.36699],
+        speed: 10, lane: 2, timestamp: Date.now()/1000|0
+      },
+
+      // === CAM 203: 횡단보도 근처 ===
+      // 보행자 (횡단보도 위)
+      {
+        cctv: 3, class: 0, id: 301,
+        bbox: [800, 500, 850, 620],
+        gps: [36.38232, 127.36685],
+        speed: 4, lane: 999, timestamp: Date.now()/1000|0
+      },
+      {
+        cctv: 3, class: 0, id: 302,
+        bbox: [900, 480, 940, 600],
+        gps: [36.38231, 127.36684],
+        speed: 5, lane: 999, timestamp: Date.now()/1000|0
+      },
+      // 교차로 진입 차량 (은행소나무길 → 횡단보도 방향, 동쪽으로 진행)
+      {
+        cctv: 3, class: 1, id: 303,
+        bbox: [1100, 400, 1350, 560],
+        gps: [36.38234, 127.36675],
+        speed: 20, lane: 2, timestamp: Date.now()/1000|0
+      },
+    ]
+  };
+  liveObjects = parseTrafficJSON(demoJSON);
+  updateObjectUI();
+  document.getElementById('liveStatus').textContent = `데모 ${liveObjects.length}개 객체`;
+  render();
+}
+
+// ============================================================
+// DRAW OBJECTS: bbox 네모 박스 + 속도/클래스 라벨
+// ============================================================
+function drawObjects() {
+  liveObjects.forEach(obj => {
+    const { cx, cy } = w2c(obj.wx, obj.wy);
+    const color = CLASS_COLORS[obj.cls] || '#ef4444';
+
+    // BEV bbox 크기 (미터 → 캔버스 픽셀)
+    const bw = obj.bboxW * scale;
+    const bh = obj.bboxH * scale;
+
+    // 글로우 이펙트
+    ctx.save();
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, Math.max(bw, bh) * 1.2);
+    grad.addColorStop(0, color + '40');
+    grad.addColorStop(1, color + '00');
+    ctx.fillStyle = grad;
+    ctx.fillRect(cx - bw*2, cy - bh*2, bw*4, bh*4);
+
+    // heading → 캔버스 각도 (BEV y+=북 → 캔버스 y-=위)
+    const ca = -obj.heading;
+
+    if (obj.cls !== 'person') {
+      // bbox + 화살표를 heading 방향으로 회전
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(ca);
+
+      // 회전된 bbox 네모 박스
+      ctx.fillStyle = color + '44';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.roundRect(-bw/2, -bh/2, bw, bh, 2);
+      ctx.fill();
+      ctx.stroke();
+
+      // 방향 화살표 (회전 좌표계에서 항상 오른쪽이 진행방향)
+      ctx.fillStyle = 'rgba(255,255,255,0.85)';
+      const aw = bh * 0.35;
+      ctx.beginPath();
+      ctx.moveTo(bw/2, 0);                   // 앞쪽 끝
+      ctx.lineTo(bw/2 - aw, -aw);            // 왼날개
+      ctx.lineTo(bw/2 - aw, aw);             // 오른날개
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    } else {
+      // 사람: 원형 (회전 불필요)
+      ctx.fillStyle = color + '44';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.min(bw, bh) * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.min(bw, bh) * 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 라벨: 클래스 + 속도
+    const labelParts = [obj.cls.toUpperCase()];
+    if (obj.speed !== null) labelParts.push(`${obj.speed}km/h`);
+    const label = labelParts.join(' ');
+
+    ctx.font = '600 9px JetBrains Mono';
+    const tw = ctx.measureText(label).width;
+
+    const lx = cx - tw/2 - 3;
+    const ly = cy + bh/2 + 4;
+    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+    ctx.beginPath();
+    ctx.roundRect(lx, ly, tw + 6, 14, 3);
+    ctx.fill();
+
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.fillText(label, cx, ly + 11);
+
+    ctx.font = '7px JetBrains Mono';
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.fillText(`#${obj.id}`, cx, ly + 23);
+    ctx.restore();
+  });
+
+  // ghost 객체 (페이드아웃)
+  ghostObjects.forEach(({ obj, opacity }) => {
+    const { cx, cy } = w2c(obj.wx, obj.wy);
+    const color = CLASS_COLORS[obj.cls] || '#ef4444';
+    const bw = obj.bboxW * scale;
+    const bh = obj.bboxH * scale;
+    ctx.save();
+    ctx.globalAlpha = opacity * 0.6;
+    if (obj.cls !== 'person') {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-obj.heading);
+      ctx.fillStyle = color + '44';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.roundRect(-bw/2, -bh/2, bw, bh, 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = color + '44';
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, Math.min(bw, bh) * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    ctx.restore();
+  });
+}
+
+function render() {
+  const cw = W / devicePixelRatio, ch = H / devicePixelRatio;
+  ctx.clearRect(0, 0, cw, ch);
+  ctx.fillStyle = '#0c1220';
+  ctx.fillRect(0, 0, cw, ch);
+
+  drawGrid();
+  drawRoads();
+  drawSidewalks();
+  drawCrosswalks();
+  drawLanes();
+  drawFOV();
+  drawGCPs();
+  drawObjects();
+  drawCompass();
+  drawScaleBar();
+}
+
+let dragging = false, lastM = { x: 0, y: 0 };
+const cEl = canvas;
+
+function getPos(e) {
+  const r = cEl.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+cEl.addEventListener('mousedown', e => {
+  dragging = true; lastM = getPos(e); cEl.style.cursor = 'grabbing';
+});
+cEl.addEventListener('mousemove', e => {
+  const p = getPos(e);
+  if (dragging) {
+    offX += p.x - lastM.x; offY += p.y - lastM.y;
+    lastM = p; render(); return;
+  }
+  const { mx, my } = c2w(p.x, p.y);
+  const g = m2gps(mx, my);
+  statusBar.textContent = `${g.lat.toFixed(7)}°N  ${g.lon.toFixed(7)}°E  |  ${mx.toFixed(1)}m, ${my.toFixed(1)}m`;
+
+  let found = null;
+  cameras.forEach((cam, ci) => {
+    if (!camVis[ci] || !layers.gcps) return;
+    cam.gcps.forEach((gcp, gi) => {
+      const sc = w2c(gcp.mx, gcp.my);
+      if (Math.hypot(p.x - sc.cx, p.y - sc.cy) < 12) found = { cam, gcp, gi };
+    });
+  });
+  if (found) {
+    tooltip.style.left = (e.clientX + 14) + 'px';
+    tooltip.style.top = (e.clientY - 8) + 'px';
+    tooltip.querySelector('.tooltip-title').textContent = `${found.cam.name} GCP-${found.gi + 1}`;
+    tooltip.querySelector('.tooltip-coord').innerHTML =
+      `Lat: ${found.gcp.lat.toFixed(8)}<br>Lon: ${found.gcp.lon.toFixed(8)}<br>Px: (${found.gcp.px[0]}, ${found.gcp.px[1]})`;
+    tooltip.classList.add('visible');
+    cEl.style.cursor = 'pointer';
+  } else {
+    tooltip.classList.remove('visible');
+    cEl.style.cursor = dragging ? 'grabbing' : 'grab';
+  }
+});
+cEl.addEventListener('mouseup', () => { dragging = false; cEl.style.cursor = 'grab'; });
+cEl.addEventListener('mouseleave', () => { dragging = false; tooltip.classList.remove('visible'); });
+
+cEl.addEventListener('wheel', e => {
+  e.preventDefault();
+  const p = getPos(e);
+  const f = e.deltaY > 0 ? 0.9 : 1.1;
+  const wmx = (p.x - offX) / scale;
+  const wmy = (p.y - offY) / scale;
+  scale = Math.max(0.3, Math.min(80, scale * f));
+  offX = p.x - wmx * scale;
+  offY = p.y - wmy * scale;
+  render();
+}, { passive: false });
+
+function zoomIn() { scale = Math.min(80, scale * 1.3); render(); }
+function zoomOut() { scale = Math.max(0.3, scale / 1.3); render(); }
+function resetView() { fitView(); render(); }
+
+function toggleCam(i) {
+  camVis[i] = !camVis[i];
+  document.querySelectorAll('.cam-toggle')[i].classList.toggle('off');
+  render();
+}
+function toggleLayer(name) {
+  layers[name] = !layers[name];
+  const el = [...document.querySelectorAll('.layer-toggle')].find(e =>
+    e.textContent.includes({
+      fov:'FOV', gcps:'기준점', lanes:'도로', crosswalk:'횡단보도',
+      sidewalk:'보도', grid:'그리드'
+    }[name])
+  );
+  if (el) el.classList.toggle('off');
+  render();
+}
+
+function fitView() {
+  const cw = W / devicePixelRatio, ch = H / devicePixelRatio;
+  const allX = cameras.flatMap(c => c.gcps.map(g => g.mx));
+  const allY = cameras.flatMap(c => c.gcps.map(g => g.my));
+  const minX = Math.min(...allX) - 10, maxX = Math.max(...allX) + 10;
+  const minY = Math.min(...allY) - 10, maxY = Math.max(...allY) + 10;
+  const rangeX = maxX - minX, rangeY = maxY - minY;
+  scale = Math.min((cw - 60) / rangeX, (ch - 60) / rangeY);
+  offX = cw / 2 - ((minX + maxX) / 2) * scale;
+  offY = ch / 2 + ((minY + maxY) / 2) * scale;
+}
+
+window.addEventListener('resize', () => { resize(); fitView(); render(); });
+resize();
+fitView();
+loadJSON();  // 페이지 로드 시 JSON 즉시 로드
+toggleAutoPolling();  // 자동 폴링 시작
+</script>
+</body>
+</html>
