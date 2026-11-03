@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BEV map — Mapbox</title>
+<script src="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.js"></script>
+<link href="https://api.mapbox.com/mapbox-gl-js/v3.4.0/mapbox-gl.css" rel="stylesheet">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap');
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'JetBrains Mono',monospace; background:#0a0e17; overflow:hidden; }
+  #map { width:100vw; height:100vh; }
+
+  .sidebar {
+    position:absolute; top:12px; left:12px; z-index:10;
+    background:rgba(10,14,23,0.92); backdrop-filter:blur(12px);
+    border:1px solid rgba(255,255,255,0.08); border-radius:10px;
+    padding:14px; width:260px; color:#e2e8f0;
+    font-size:11px; max-height:calc(100vh - 24px); overflow-y:auto;
+  }
+  .sidebar h2 {
+    font-size:13px; font-weight:700; margin-bottom:10px;
+    color:#f1f5f9; letter-spacing:0.5px;
+  }
+  .panel { margin-bottom:12px; padding-bottom:10px; border-bottom:1px solid rgba(255,255,255,0.06); }
+  .panel-title { font-size:10px; font-weight:700; color:#94a3b8; text-transform:uppercase; letter-spacing:1px; margin-bottom:6px; }
+
+  .toggle-row { display:flex; align-items:center; gap:6px; margin-bottom:4px; cursor:pointer; }
+  .toggle-row input { accent-color:#3b82f6; }
+  .toggle-row label { cursor:pointer; font-size:11px; }
+
+  .obj-panel {
+    background:rgba(255,255,255,0.03); border-radius:6px; padding:8px; margin-top:6px;
+  }
+  .obj-row {
+    display:flex; align-items:center; gap:4px; padding:2px 0;
+    border-bottom:1px solid rgba(255,255,255,0.03); font-size:10px;
+  }
+  .status-dot { width:7px; height:7px; border-radius:50%; flex-shrink:0; }
+
+  .ctrl-btn {
+    background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.1);
+    color:#e2e8f0; padding:4px 10px; border-radius:5px; cursor:pointer;
+    font-family:inherit; font-size:10px; transition:background 0.2s;
+  }
+  .ctrl-btn:hover { background:rgba(255,255,255,0.12); }
+
+  .mapboxgl-ctrl-attrib { font-size:9px !important; }
+</style>
+</head>
+<body>
+
+<div class="sidebar">
+  <h2>BEV Monitor</h2>
+
+  <div class="panel">
+    <div class="panel-title">레이어</div>
+    <div class="toggle-row"><input type="checkbox" id="togLanes" checked onchange="toggleLayer('lanes')"><label for="togLanes">차선 (Shapefile)</label></div>
+    <div class="toggle-row"><input type="checkbox" id="togFov" checked onchange="toggleLayer('fov')"><label for="togFov">카메라 FOV</label></div>
+    <div class="toggle-row"><input type="checkbox" id="togGcp" checked onchange="toggleLayer('gcp')"><label for="togGcp">GCP 기준점</label></div>
+    <div class="toggle-row"><input type="checkbox" id="togObj" checked onchange="toggleLayer('objects')"><label for="togObj">실시간 객체</label></div>
+    <div class="toggle-row"><input type="checkbox" id="togBox" onchange="toggleLayer('boxes')"><label for="togBox">실크기 박스 (bbox)</label></div>
+    <div class="toggle-row"><input type="checkbox" id="togBgMove" checked onchange="toggleLayer('bgmove')"><label for="togBgMove">이동식 배경</label></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">배경 정렬 (표시 전용, 좌표 불변)</div>
+    <div style="font-size:10px;color:#94a3b8;margin-bottom:3px;">동서(E) <span id="bgReadE">0.00</span>m</div>
+    <input type="range" id="bgSlideE" min="-5" max="5" step="0.05" value="0" style="width:100%;accent-color:#3b82f6;" oninput="onBgSlide()">
+    <div style="font-size:10px;color:#94a3b8;margin:5px 0 3px;">남북(N) <span id="bgReadN">0.00</span>m</div>
+    <input type="range" id="bgSlideN" min="-5" max="5" step="0.05" value="0" style="width:100%;accent-color:#3b82f6;" oninput="onBgSlide()">
+    <button class="ctrl-btn" onclick="bgReset()" style="margin-top:7px;">리셋</button>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">실시간 객체</div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+      <div class="status-dot" id="liveIndicator" style="background:#ef4444;"></div>
+      <span id="liveStatus" style="color:#64748b;">대기중</span>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:6px;">
+      <button class="ctrl-btn" onclick="loadDemoData()">데모 로드</button>
+      <button class="ctrl-btn" id="pollBtn" onclick="togglePolling()">폴링 ON</button>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px;">
+      <button class="ctrl-btn" id="replayBtn" onclick="toggleReplay()">Replay 시작</button>
+      <span id="replayStatus" style="color:#64748b;font-size:10px;align-self:center;"></span>
+    </div>
+    <div class="obj-panel" id="objectList">JSON 파일을 로드하세요</div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">지도 스타일</div>
+    <div style="display:flex;gap:4px;flex-wrap:wrap;">
+      <button class="ctrl-btn" onclick="setStyle('satellite-streets-v12')">위성+도로</button>
+      <button class="ctrl-btn" onclick="setStyle('satellite-v9')">위성</button>
+      <button class="ctrl-btn" onclick="setStyle('dark-v11')">다크</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">GCP 편집</div>
+    <div style="display:flex;gap:4px;margin-bottom:6px;">
+      <button class="ctrl-btn" id="editBtn" onclick="toggleEditMode()" style="flex:1">편집 모드 ON</button>
+      <button class="ctrl-btn" onclick="exportGCPs()">좌표 복사</button>
+    </div>
+    <div id="gcpEditInfo" style="color:#64748b;font-size:9px;">
+      편집 모드에서 GCP를 드래그하세요
+    </div>
+    <pre id="gcpExport" style="display:none;background:rgba(0,0,0,0.4);padding:6px;border-radius:4px;font-size:8px;color:#10b981;max-height:200px;overflow-y:auto;white-space:pre-wrap;margin-top:6px;"></pre>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">ROI 그리기 (겹침영역)</div>
+    <div style="display:flex;gap:4px;margin-bottom:6px;flex-wrap:wrap;">
+      <button class="ctrl-btn" id="roiBtn" onclick="toggleRoiMode()" style="flex:1 1 100%">ROI 그리기 ON</button>
+      <button class="ctrl-btn" onclick="undoRoiPoint()">취소</button>
+      <button class="ctrl-btn" onclick="clearRoi()">초기화</button>
+      <button class="ctrl-btn" onclick="exportRoi()">좌표 복사</button>
+    </div>
+    <div id="roiInfo" style="color:#64748b;font-size:9px;">ON 후 지도 클릭=꼭짓점 추가, 마커 드래그=조정</div>
+    <pre id="roiExport" style="display:none;background:rgba(0,0,0,0.4);padding:6px;border-radius:4px;font-size:8px;color:#10b981;max-height:160px;overflow-y:auto;white-space:pre-wrap;margin-top:6px;"></pre>
+  </div>
+</div>
+
+<div id="map"></div>
+
+<script>
+mapboxgl.accessToken = 'pk.eyJ1IjoibWtzaGluIiwiYSI6ImNtbXR6N2I4MTFpcTYycW9qNGh5anhjM3QifQ.1Ih9E2M5tDDTRDjNndvg6A';
+
+const ETRI_CENTER = [127.3669, 36.3825];
+
+const map = new mapboxgl.Map({
+  container: 'map',
+  style: 'mapbox://styles/mapbox/satellite-streets-v12',
+  center: ETRI_CENTER,
+  zoom: 18.5,
+  pitch: 0,
+  bearing: 0,
+});
+
+map.addControl(new mapboxgl.NavigationControl(), 'top-right');
+
+// ============================================================
+// 이동식 배경(위성 스틸) — 데이터/오버레이는 참값 그대로, 배경만 표시 이동
+// ============================================================
+const BG_BBOX = { w:127.36555, s:36.38142, e:127.36825, n:36.38358 };
+let bgOffE = 0, bgOffN = 0;   // 배경 표시 오프셋(m). SDSM-G 데이터엔 영향 없음
+function bgCorners(dE, dN) {
+  const dLon = dE / (111320 * Math.cos(36.3825 * Math.PI / 180));
+  const dLat = dN / 111320;
+  return [
+    [BG_BBOX.w + dLon, BG_BBOX.n + dLat],   // top-left
+    [BG_BBOX.e + dLon, BG_BBOX.n + dLat],   // top-right
+    [BG_BBOX.e + dLon, BG_BBOX.s + dLat],   // bottom-right
+    [BG_BBOX.w + dLon, BG_BBOX.s + dLat],   // bottom-left
+  ];
+}
+function addBgImage() {
+  if (map.getSource('bgimg')) return;
+  const url = 'https://api.mapbox.com/styles/v1/mapbox/satellite-v9/static/%5B'
+    + BG_BBOX.w + ',' + BG_BBOX.s + ',' + BG_BBOX.e + ',' + BG_BBOX.n
+    + '%5D/1000x994@2x?access_token=' + mapboxgl.accessToken + '&attribution=false&logo=false';
+  map.addSource('bgimg', { type:'image', url:url, coordinates: bgCorners(bgOffE, bgOffN) });
+  // 맨 아래(베이스 위, 오버레이 아래)에 깔기 위해 처음에 추가
+  map.addLayer({ id:'bgimg-layer', type:'raster', source:'bgimg',
+                 paint:{ 'raster-opacity':1, 'raster-fade-duration':0 } });
+}
+function setBgOffset(dE, dN) {
+  bgOffE = dE; bgOffN = dN;
+  const s = map.getSource('bgimg');
+  if (s) s.setCoordinates(bgCorners(dE, dN));
+}
+function onBgSlide() {
+  const e = parseFloat(document.getElementById('bgSlideE').value);
+  const n = parseFloat(document.getElementById('bgSlideN').value);
+  document.getElementById('bgReadE').textContent = e.toFixed(2);
+  document.getElementById('bgReadN').textContent = n.toFixed(2);
+  setBgOffset(e, n);
+}
+function bgReset() {
+  document.getElementById('bgSlideE').value = 0;
+  document.getElementById('bgSlideN').value = 0;
+  onBgSlide();
+}
+
+// ============================================================
+// CAMERA DATA
+// ============================================================
+const cameras = [
+  {
+    name: 'CAM 101', color: '#3b82f6',
+    // overlap dedup ROI (OVERLAP_ROI) — [lon,lat] 순서로 변환한 4점
+    fov: [[127.3664009,36.3824197],[127.3664015,36.3822606],[127.3667231,36.3822606],[127.3667504,36.3824192]],
+    gcps: [
+      {lat:36.38230120,lon:127.36668908},{lat:36.38235821,lon:127.36668811},
+      {lat:36.38230115,lon:127.36640534},{lat:36.38236032,lon:127.36640555},
+      {lat:36.38230303,lon:127.36624639},{lat:36.38236162,lon:127.36624581},
+    ]
+  },
+  {
+    name: 'CAM 202', color: '#a855f7',
+    // overlap dedup ROI (OVERLAP_ROI) — [lon,lat] 순서로 변환한 4점
+    fov: [[127.3668100,36.3823004],[127.3669243,36.3822993],[127.3673785,36.3827036],[127.3668117,36.3827014]],
+    gcps: [
+      {lat:36.38233063,lon:127.36685364},{lat:36.38233149,lon:127.36688069},
+      {lat:36.38235470,lon:127.36686200},{lat:36.38235470,lon:127.36689290},
+      {lat:36.38238440,lon:127.36691330},{lat:36.38238440,lon:127.36702980},
+      {lat:36.38245800,lon:127.36695100},{lat:36.38245800,lon:127.36697380},
+    ]
+  },
+  {
+    name: 'CAM 203', color: '#f59e0b',
+    fov: [[127.36681051,36.38228334],[127.36690087,36.38228252],[127.36690036,36.38233869],[127.36681127,36.38233869]],
+    gcps: [
+      {lat:36.38228014,lon:127.36684021},{lat:36.38228014,lon:127.36686192},
+      {lat:36.38229400,lon:127.36684280},{lat:36.38229400,lon:127.36686674},
+      {lat:36.38233063,lon:127.36685364},{lat:36.38233149,lon:127.36688069},
+      {lat:36.38231800,lon:127.36689320},{lat:36.38230300,lon:127.36689840},
+    ]
+  },
+];
+
+// ============================================================
+// CLASS CONFIG
+// ============================================================
+const CLASS_NAMES = {0:'person',1:'cyclist',2:'car',3:'motorcycle'};
+// car 색은 yolov5 bbox 팔레트와 통일 (#FF701F orange)
+// 도로 위 보행자(road) 빨강과 차별화 + 알림 느낌 완화
+const CLASS_COLORS = {person:'#34d399',cyclist:'#f5b777',car:'#22d3ee',motorcycle:'#eab308'};
+const AV_GLOBAL_ID = 88888;
+const AV_COLOR = '#2171ad'; // 형광 시안 — AV 전용
+const PED_ZONE_COLORS = {sidewalk:'#34d399', crosswalk:'#facc15', road:'#ef4444', unknown:'#34d399'};
+const PED_ZONE_KO    = {sidewalk:'인도', crosswalk:'횡단보도', road:'차도', unknown:'?'};
+
+// ============================================================
+// MAP LOAD
+// ============================================================
+let laneGeoJSON = null;
+let liveObjects = [];
+let pollingInterval = null;
+let isPolling = false;
+let lastDataHash = '';
+
+// Ghost persistence: hold last known position for up to GHOST_TTL ms
+const GHOST_TTL = 500;  // ms
+const ghostCache = new Map(); // id → { t, feature }
+
+map.on('load', () => {
+  addBgImage();   // 이동식 배경 먼저(맨 아래)
+  // Load lane GeoJSON
+  fetch('/maps/etri_lanes.geojson')
+    .then(r => r.json())
+    .then(data => {
+      laneGeoJSON = data;
+      addLaneLayers(data);
+    })
+    .catch(() => console.log('etri_lanes.geojson not found, skipping lanes'));
+
+  addCameraLayers();
+  addObjectSource();
+  togglePolling();  // 자동 폴링 시작
+});
+
+// ============================================================
+// LANE LAYERS (from Shapefile)
+// ============================================================
+function addLaneLayers(geojson) {
+  map.addSource('lanes', { type:'geojson', data:geojson });
+
+  // White boundary
+  map.addLayer({
+    id:'lanes-boundary', type:'line', source:'lanes',
+    filter:['==',['get','type'],'BOUNDARY'],
+    paint:{ 'line-color':'#ffffff', 'line-width':1.5, 'line-opacity':0.6 }
+  });
+
+  // White solid
+  map.addLayer({
+    id:'lanes-solid-white', type:'line', source:'lanes',
+    filter:['all',['==',['get','type'],'SOLID'],['==',['get','color'],'WHITE']],
+    paint:{ 'line-color':'#ffffff', 'line-width':2, 'line-opacity':0.8 }
+  });
+
+  // Yellow solid (center line)
+  map.addLayer({
+    id:'lanes-solid-yellow', type:'line', source:'lanes',
+    filter:['all',['==',['get','type'],'SOLID'],['==',['get','color'],'YELLOW']],
+    paint:{ 'line-color':'#facc15', 'line-width':2.5, 'line-opacity':0.9 }
+  });
+
+  // Dotted white
+  map.addLayer({
+    id:'lanes-dot', type:'line', source:'lanes',
+    filter:['==',['get','type'],'DOT'],
+    paint:{ 'line-color':'#ffffff', 'line-width':1.5, 'line-opacity':0.6, 'line-dasharray':[2,3] }
+  });
+
+  // Yellow double
+  map.addLayer({
+    id:'lanes-double', type:'line', source:'lanes',
+    filter:['==',['get','type'],'DOUBLE'],
+    paint:{ 'line-color':'#facc15', 'line-width':3, 'line-opacity':0.9 }
+  });
+}
+
+// ============================================================
+// CAMERA FOV & GCP LAYERS
+// ============================================================
+function addCameraLayers() {
+  // FOV polygons
+  const fovFeatures = cameras.map(cam => ({
+    type:'Feature',
+    properties:{ name:cam.name, color:cam.color },
+    geometry:{ type:'Polygon', coordinates:[[...cam.fov, cam.fov[0]]] }
+  }));
+
+  map.addSource('fov', { type:'geojson', data:{ type:'FeatureCollection', features:fovFeatures }});
+  map.addLayer({
+    id:'fov-fill', type:'fill', source:'fov',
+    paint:{ 'fill-color':['get','color'], 'fill-opacity':0.1 }
+  });
+  map.addLayer({
+    id:'fov-line', type:'line', source:'fov',
+    paint:{ 'line-color':['get','color'], 'line-width':2, 'line-opacity':0.6, 'line-dasharray':[4,2] }
+  });
+
+  // FOV labels
+  const fovCenters = cameras.map(cam => {
+    const cx = cam.fov.reduce((a,p) => a+p[0], 0) / cam.fov.length;
+    const cy = cam.fov.reduce((a,p) => a+p[1], 0) / cam.fov.length;
+    return {
+      type:'Feature',
+      properties:{ name:cam.name, color:cam.color },
+      geometry:{ type:'Point', coordinates:[cx,cy] }
+    };
+  });
+  map.addSource('fov-labels', { type:'geojson', data:{ type:'FeatureCollection', features:fovCenters }});
+  map.addLayer({
+    id:'fov-label', type:'symbol', source:'fov-labels',
+    layout:{ 'text-field':['get','name'], 'text-size':11, 'text-font':['DIN Pro Medium','Arial Unicode MS Regular'] },
+    paint:{ 'text-color':['get','color'], 'text-halo-color':'rgba(0,0,0,0.8)', 'text-halo-width':1.5 }
+  });
+
+  // GCP points
+  const gcpFeatures = [];
+  cameras.forEach(cam => {
+    cam.gcps.forEach((g, gi) => {
+      gcpFeatures.push({
+        type:'Feature',
+        properties:{ label:`${cam.name.split(' ')[1]}-${gi+1}`, color:cam.color },
+        geometry:{ type:'Point', coordinates:[g.lon, g.lat] }
+      });
+    });
+  });
+  map.addSource('gcps', { type:'geojson', data:{ type:'FeatureCollection', features:gcpFeatures }});
+  map.addLayer({
+    id:'gcp-circle', type:'circle', source:'gcps',
+    paint:{ 'circle-radius':4, 'circle-color':['get','color'], 'circle-stroke-width':1.5, 'circle-stroke-color':'#fff' }
+  });
+  map.addLayer({
+    id:'gcp-label', type:'symbol', source:'gcps',
+    layout:{ 'text-field':['get','label'], 'text-size':9, 'text-offset':[1,0], 'text-anchor':'left',
+             'text-font':['DIN Pro Medium','Arial Unicode MS Regular'] },
+    paint:{ 'text-color':'#ffffff', 'text-halo-color':'rgba(0,0,0,0.7)', 'text-halo-width':1 }
+  });
+}
+
+// ============================================================
+// REAL-TIME OBJECTS
+// ============================================================
+let showBoxes = false;   // 실크기 박스(bbox) 표시 여부 (토글)
+
+function addObjectSource() {
+  // 실크기 박스 (bbox_gps 폴리곤) — 객체 마커 아래에 깔림, 기본 숨김(토글로 on)
+  map.addSource('objboxes', { type:'geojson', data:{ type:'FeatureCollection', features:[] } });
+  map.addLayer({
+    id:'obj-box-fill', type:'fill', source:'objboxes',
+    layout:{ visibility: (showBoxes ? 'visible' : 'none') },
+    paint:{ 'fill-color':['get','color'], 'fill-opacity':0.18 }
+  });
+  map.addLayer({
+    id:'obj-box-line', type:'line', source:'objboxes',
+    layout:{ visibility: (showBoxes ? 'visible' : 'none') },
+    paint:{ 'line-color':['get','color'], 'line-width':2, 'line-opacity':0.9 }
+  });
+
+  map.addSource('objects', {
+    type:'geojson',
+    data:{ type:'FeatureCollection', features:[] }
+  });
+  // 점 표시 — glow + circle (AV와 일반차량 동일 크기, 색깔만 다름)
+  map.addLayer({
+    id:'obj-glow', type:'circle', source:'objects',
+    paint:{
+      'circle-radius':18,
+      'circle-color':['get','color'],
+      'circle-opacity':0.15,
+      'circle-blur':1,
+    }
+  });
+  map.addLayer({
+    id:'obj-circle', type:'circle', source:'objects',
+    paint:{
+      'circle-radius':8,
+      'circle-color':['get','color'],
+      'circle-stroke-width':2,
+      'circle-stroke-color':'#ffffff',
+      'circle-opacity':0.9,
+    }
+  });
+
+  // Object labels
+  map.addLayer({
+    id:'obj-label', type:'symbol', source:'objects',
+    layout:{
+      'text-field':['get','label'],
+      'text-size':15,
+      'text-offset':[0,1.8],
+      'text-anchor':'top',
+      'text-font':['DIN Pro Bold','Arial Unicode MS Bold'],
+      // 매 폴링(100ms) setData 때 collision 재계산으로 라벨이 숨었다 보였다 하는
+      // 깜빡임 방지: 항상 표시 + 배치 재계산 안 함.
+      'text-allow-overlap': true,
+      'text-ignore-placement': true,
+    },
+    paint:{
+      'text-color':['get','color'],
+      'text-halo-color':'rgba(0,0,0,0.9)',
+      'text-halo-width':2,
+    }
+  });
+}
+
+function updateObjects(trafficData) {
+  if (!trafficData || !trafficData.traffic) return;
+
+  liveObjects = trafficData.traffic;
+  const now = Date.now();
+
+  // Build features from live data and update ghost cache
+  const liveFeatures = trafficData.traffic.map(t => {
+    const clsName = CLASS_NAMES[t.class] || 'car';
+    const gps = t.gps || t.GPS || [0,0];
+    const speed = (t.speed === 999 || t.speed === null) ? '' : `${Math.round(t.speed)}km/h`;
+    const stopTag = (t.stop_duration >= 3) ? ` P${t.stop_duration}s` : '';
+    let occTag = '';
+    if (Array.isArray(t.lane_occupancy)) {          // [lane1, lane2] 차선별 점유율
+      const parts = t.lane_occupancy
+        .map((o,i) => (o > 0) ? `L${i+1} ${Math.round(o*100)}%` : null)
+        .filter(x => x);
+      if (parts.length) occTag = ' ' + parts.join(' ');
+    } else if (t.lane_occupancy > 0) {              // 하위호환(옛 스칼라)
+      occTag = ` ${Math.round(t.lane_occupancy*100)}%`;
+    }
+    const isPerson = (t.class === 0);
+    const isAV = (t.id === AV_GLOBAL_ID);
+    const zone = t.ped_zone || null;
+    let color;
+    if (isAV) color = AV_COLOR;
+    else if (isPerson) color = (PED_ZONE_COLORS[zone] || '#34d399');
+    else color = (CLASS_COLORS[clsName] || '#ef4444');
+    const zoneTag = isPerson && zone ? ` [${PED_ZONE_KO[zone] || zone}]` : '';
+    const baseLabel = `${clsName.toUpperCase()}${zoneTag} ${speed}${stopTag}${occTag}`;
+    const label = isAV ? `AV ${speed}${stopTag}${occTag}` : baseLabel;
+    const feat = {
+      type:'Feature',
+      properties:{ id:t.id, cctv:t.cctv, cls:clsName, color:color, label:label, speed:t.speed,
+                   stop_duration:t.stop_duration||0, ped_zone:zone,
+                   lane_occupancy:t.lane_occupancy||0, is_av:isAV,
+                   bbox_gps: t.bbox_gps || null },
+      geometry:{ type:'Point', coordinates:[gps[1], gps[0]] }
+    };
+    // ghost cache 키도 cctv+id로 (카메라간 id 충돌 방지)
+    const ghostKey = (t.cctv ?? '?') + ':' + t.id;
+    ghostCache.set(ghostKey, { t: now, feature: feat });
+    return feat;
+  });
+
+  // Add ghost objects still within TTL that aren't in live data
+  const liveIds = new Set(trafficData.traffic.map(t => (t.cctv ?? '?') + ':' + t.id));
+  // 라이브 마커 위치 — 이 근처의 ghost는 "동일 객체"일 가능성이 높아 억제
+  // (예: AV id가 #600→88888로 튀면 옛 "cam3:600"이 잔상으로 남아 중복 표출됨.
+  //  dedup으로 사라진 다른 카메라 마커가 잔상으로 남는 경우도 동일하게 억제.)
+  const GHOST_SUPPRESS_M2 = 6 * 6;  // 라이브 마커 6m 내 ghost 억제
+  const liveCoords = liveFeatures.map(f => f.geometry.coordinates); // [lon,lat]
+  function ghostNearLive(coord) {
+    for (const c of liveCoords) {
+      const dn = (c[1] - coord[1]) * 111320;
+      const de = (c[0] - coord[0]) * 111320 * 0.805;  // cos(~36.4°)
+      if (dn * dn + de * de <= GHOST_SUPPRESS_M2) return true;
+    }
+    return false;
+  }
+  const ghostFeatures = [];
+  for (const [id, entry] of ghostCache) {
+    if (!liveIds.has(id)) {
+      if (now - entry.t < GHOST_TTL) {
+        if (!ghostNearLive(entry.feature.geometry.coordinates)) {
+          ghostFeatures.push(entry.feature);  // 라이브 근처 아니면만 잔상 표출
+        }
+      } else {
+        ghostCache.delete(id);
+      }
+    }
+  }
+
+  const allPointFeatures = [...liveFeatures, ...ghostFeatures];
+  // 폴링 결과를 애니메이션 타깃으로 업데이트 (즉시 setData 안 함)
+  updateAnimationTargets(allPointFeatures);
+  updateObjectUI();
+}
+
+// ============================================================
+// CLIENT-SIDE INTERPOLATION (smooth between polls)
+// ============================================================
+// 각 id마다 start/target poly/point 보존, RAF로 매 프레임 보간 → setData
+const animStates = new Map();  // id → {startPoly, targetPoly, startPoint, targetPoint, startTime, props, ghost}
+let ANIM_DURATION_MS = 150;  // 초기값; 실제 update 간격 측정 후 적응적으로 조정
+const ANIM_DURATION_MIN = 50;
+const ANIM_DURATION_MAX = 600;
+let animRunning = false;
+let animLastTargetTime = 0;
+
+function updateAnimationTargets(features) {
+  const now = performance.now();
+  // 실제 update 간격 측정 → ANIM_DURATION을 적응적으로 조정 (지수 평활화)
+  if (animLastTargetTime > 0) {
+    const dt = now - animLastTargetTime;
+    if (dt >= ANIM_DURATION_MIN && dt <= ANIM_DURATION_MAX) {
+      ANIM_DURATION_MS = ANIM_DURATION_MS * 0.7 + dt * 0.3;
+    }
+  }
+  animLastTargetTime = now;
+  const liveIdsLocal = new Set();
+  for (const f of features) {
+    // 카메라별로 id가 중복 가능하므로 cctv+id 합쳐서 unique key 만듦
+    const id = (f.properties.cctv ?? '?') + ':' + f.properties.id;
+    liveIdsLocal.add(id);
+    const targetPoint = f.geometry.coordinates;  // [lon, lat]
+    const existing = animStates.get(id);
+    if (existing) {
+      // 위치 점프 (>50m) 또는 긴 gap (탭 background throttle) → snap (보간 안 함)
+      const cosLat = Math.cos(existing.targetPoint[1] * Math.PI / 180);
+      const dx = (targetPoint[0] - existing.targetPoint[0]) * 111320 * cosLat;
+      const dy = (targetPoint[1] - existing.targetPoint[1]) * 111320;
+      const jumpM = Math.sqrt(dx*dx + dy*dy);
+      if (jumpM > 50) {
+        existing.startPoint = targetPoint;
+      } else {
+        existing.startPoint = existing.currentPoint || existing.targetPoint;
+      }
+      existing.targetPoint = targetPoint;
+      existing.startTime = now;
+      existing.props = f.properties;
+    } else {
+      animStates.set(id, {
+        startPoint: targetPoint, currentPoint: targetPoint, targetPoint: targetPoint,
+        startTime: now, props: f.properties
+      });
+    }
+  }
+  for (const id of [...animStates.keys()]) {
+    if (!liveIdsLocal.has(id)) animStates.delete(id);
+  }
+  if (!animRunning) {
+    animRunning = true;
+    requestAnimationFrame(animTick);
+  }
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+function lerpCoord(a, b, t) { return [lerp(a[0], b[0], t), lerp(a[1], b[1], t)]; }
+
+function animTick() {
+  const now = performance.now();
+  const pointFeatures = [];
+  const boxFeatures = [];
+  for (const [id, s] of animStates) {
+    const elapsed = now - s.startTime;
+    const t = Math.min(1, elapsed / ANIM_DURATION_MS);
+    // ease-out cubic: 시작은 빠르게, 끝은 부드럽게 (순간이동 느낌 완화)
+    const u = 1 - Math.pow(1 - t, 3);
+    s.currentPoint = lerpCoord(s.startPoint, s.targetPoint, u);
+    pointFeatures.push({
+      type:'Feature', properties: s.props,
+      geometry:{ type:'Point', coordinates: s.currentPoint }
+    });
+    // 실크기 박스: bbox_gps([lat,lon]×5)를 [lon,lat]로 변환 + 마커 애니메이션 오프셋 적용
+    if (showBoxes && s.props && Array.isArray(s.props.bbox_gps) && s.props.bbox_gps.length >= 4) {
+      const offLon = s.currentPoint[0] - s.targetPoint[0];
+      const offLat = s.currentPoint[1] - s.targetPoint[1];
+      const ring = s.props.bbox_gps.map(p => [p[1] + offLon, p[0] + offLat]);
+      const a = ring[0], z = ring[ring.length - 1];
+      if (a[0] !== z[0] || a[1] !== z[1]) ring.push(a);   // ring 닫기
+      boxFeatures.push({
+        type:'Feature', properties: s.props,
+        geometry:{ type:'Polygon', coordinates:[ring] }
+      });
+    }
+  }
+  map.getSource('objects').setData({ type:'FeatureCollection', features: pointFeatures });
+  if (map.getSource('objboxes')) {
+    map.getSource('objboxes').setData({ type:'FeatureCollection', features: boxFeatures });
+  }
+  // 지속 애니메이션: 다음 poll 도착 전까지 계속 보간
+  if (animStates.size > 0) {
+    requestAnimationFrame(animTick);
+  } else {
+    animRunning = false;
+  }
+}
+
+// ============================================================
+// JSON POLLING
+// ============================================================
+async function loadJSON() {
+  try {
+    const r = await fetch('/outputs/cctv-traffic.json?t=' + Date.now());
+    if (!r.ok) return;
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); } catch(e) { return; }
+    // 매 폴링마다 갱신 (정차시간·속도·점유율 등 수치 변화 실시간 반영).
+    // 예전엔 위치 변화 없으면 skip했으나(깜빡임 방지용), 깜빡임은 라벨의
+    // text-allow-overlap 으로 별도 해결됨 → 억제 불필요. 위치는 RAF 보간으로 부드럽게.
+    updateObjects(data);
+  } catch(e) {}
+}
+
+function togglePolling() {
+  isPolling = !isPolling;
+  const btn = document.getElementById('pollBtn');
+  if (isPolling) {
+    btn.textContent = '폴링 OFF';
+    pollingInterval = setInterval(loadJSON, 100);
+    document.getElementById('liveIndicator').style.background = '#10b981';
+    document.getElementById('liveStatus').textContent = '폴링 중 (0.1s)';
+  } else {
+    btn.textContent = '폴링 ON';
+    clearInterval(pollingInterval);
+    document.getElementById('liveIndicator').style.background = '#ef4444';
+    document.getElementById('liveStatus').textContent = '폴링 중지';
+  }
+}
+
+// ============================================================
+// REPLAY MODE — JSONL 로그를 video FPS로 재생
+// ============================================================
+const REPLAY_VIDEO_FPS = 30;
+let replayRunning = false;
+let replayTimer = null;
+
+async function toggleReplay() {
+  const btn = document.getElementById('replayBtn');
+  const status = document.getElementById('replayStatus');
+  if (replayRunning) {
+    // 정지
+    replayRunning = false;
+    if (replayTimer) clearTimeout(replayTimer);
+    btn.textContent = 'Replay 시작';
+    status.textContent = '정지됨';
+    return;
+  }
+  // 시작: 로그 fetch
+  status.textContent = '로그 로딩 중...';
+  let text;
+  try {
+    const r = await fetch('/outputs/cctv-traffic-log.jsonl?t=' + Date.now());
+    if (!r.ok) { status.textContent = '로그 파일 없음'; return; }
+    text = await r.text();
+  } catch(e) { status.textContent = 'fetch 실패'; return; }
+  const lines = text.trim().split('\n').filter(l => l);
+  if (lines.length === 0) { status.textContent = '빈 로그'; return; }
+  // 폴링 정지 (replay와 충돌 방지)
+  if (isPolling) togglePolling();
+  // 재생 준비
+  replayRunning = true;
+  btn.textContent = 'Replay 정지';
+  const snapshots = lines.map(l => { try { return JSON.parse(l); } catch(e) { return null; }}).filter(s => s);
+  if (snapshots.length === 0) { status.textContent = 'JSON 파싱 실패'; replayRunning = false; btn.textContent='Replay 시작'; return; }
+  // frame_idx 기준 정렬
+  snapshots.sort((a, b) => (a.frame_idx || 0) - (b.frame_idx || 0));
+  const firstFrame = snapshots[0].frame_idx || 0;
+  const lastFrame = snapshots[snapshots.length-1].frame_idx || 0;
+  const totalFrames = lastFrame - firstFrame + 1;
+  status.textContent = `재생 0/${snapshots.length} (총 ${(totalFrames/REPLAY_VIDEO_FPS).toFixed(1)}s)`;
+  const replayStart = performance.now();
+  let nextIdx = 0;
+  function tick() {
+    if (!replayRunning) return;
+    const elapsed = (performance.now() - replayStart) / 1000;  // sec
+    const currentFrame = Math.floor(elapsed * REPLAY_VIDEO_FPS) + firstFrame;
+    // currentFrame까지의 모든 스냅샷 처리 (가장 최근 것만 표출)
+    let applied = null;
+    while (nextIdx < snapshots.length && snapshots[nextIdx].frame_idx <= currentFrame) {
+      applied = snapshots[nextIdx];
+      nextIdx++;
+    }
+    if (applied) {
+      updateObjects({ traffic: applied.traffic });
+      status.textContent = `재생 ${nextIdx}/${snapshots.length} (frame ${applied.frame_idx})`;
+    }
+    if (nextIdx >= snapshots.length) {
+      // 완료
+      replayRunning = false;
+      document.getElementById('replayBtn').textContent = 'Replay 시작';
+      status.textContent = `완료 (${snapshots.length} 프레임)`;
+      return;
+    }
+    replayTimer = setTimeout(tick, 33);  // ~30 FPS UI update
+  }
+  tick();
+}
+
+function updateObjectUI() {
+  const el = document.getElementById('objectList');
+  if (liveObjects.length === 0) { el.innerHTML = '감지된 객체 없음'; return; }
+
+  document.getElementById('liveIndicator').style.background = '#10b981';
+  document.getElementById('liveStatus').textContent = `${liveObjects.length}개 | ${new Date().toLocaleTimeString()}`;
+
+  el.innerHTML = liveObjects.map(o => {
+    const cls = CLASS_NAMES[o.class] || 'car';
+    const isPerson = (o.class === 0);
+    const zone = o.ped_zone || null;
+    const color = isPerson ? (PED_ZONE_COLORS[zone] || '#34d399') : (CLASS_COLORS[cls] || '#ef4444');
+    const spd = (o.speed !== 999 && o.speed !== null) ? `${o.speed}km/h` : '';
+    const stopBadge = (o.stop_duration >= 3) ? `<span style="color:#f59e0b;margin-left:4px">P${o.stop_duration}s</span>` : '';
+    const occBadge = (o.lane_occupancy > 0) ? `<span style="color:#f472b6;margin-left:4px">${Math.round(o.lane_occupancy*100)}%</span>` : '';
+    const zoneBadge = isPerson && zone ? `<span style="color:${color};margin-left:4px;font-size:9px">${PED_ZONE_KO[zone]||zone}</span>` : '';
+    return `<div class="obj-row">
+      <div class="status-dot" style="background:${color}"></div>
+      <span style="color:${color};font-weight:700">${cls}</span>
+      <span style="color:#64748b">#${o.id}</span>
+      ${zoneBadge}
+      <span style="margin-left:auto;color:#94a3b8">${spd}</span>${stopBadge}${occBadge}
+    </div>`;
+  }).join('');
+}
+
+// ============================================================
+// DEMO DATA
+// ============================================================
+function loadDemoData() {
+  const demo = { traffic: [
+    { cctv:1, class:2, id:101, bbox:[400,300,550,420], gps:[36.38231,127.36650], speed:25, lane:1, timestamp:Date.now()/1000|0 },
+    { cctv:1, class:2, id:102, bbox:[700,320,850,410], gps:[36.38235,127.36640], speed:30, lane:2, timestamp:Date.now()/1000|0 },
+    { cctv:2, class:2, id:201, bbox:[600,400,800,580], gps:[36.38248,127.36693], speed:15, lane:1, timestamp:Date.now()/1000|0 },
+    { cctv:2, class:2, id:202, bbox:[900,350,1200,550], gps:[36.38258,127.36697], speed:10, lane:2, timestamp:Date.now()/1000|0 },
+    { cctv:3, class:0, id:301, bbox:[800,500,850,620], gps:[36.38232,127.36685], speed:4, lane:999, ped_zone:'crosswalk', timestamp:Date.now()/1000|0 },
+    { cctv:3, class:0, id:302, bbox:[900,480,940,600], gps:[36.38231,127.36684], speed:5, lane:999, ped_zone:'road', timestamp:Date.now()/1000|0 },
+    { cctv:3, class:2, id:303, bbox:[1100,400,1350,560], gps:[36.38234,127.36675], speed:20, lane:2, timestamp:Date.now()/1000|0 },
+  ]};
+  updateObjects(demo);
+}
+
+// ============================================================
+// LAYER TOGGLES
+// ============================================================
+function toggleLayer(name) {
+  const layers = {
+    lanes: ['lanes-boundary','lanes-solid-white','lanes-solid-yellow','lanes-dot','lanes-double'],
+    fov: ['fov-fill','fov-line','fov-label'],
+    gcp: ['gcp-circle','gcp-label'],
+    objects: ['obj-glow','obj-circle','obj-label'],
+    boxes: ['obj-box-fill','obj-box-line'],
+    bgmove: ['bgimg-layer'],
+  };
+  (layers[name] || []).forEach(id => {
+    try {
+      const v = map.getLayoutProperty(id, 'visibility');
+      map.setLayoutProperty(id, 'visibility', v === 'none' ? 'visible' : 'none');
+    } catch(e) {}
+  });
+  if (name === 'boxes') {
+    const cb = document.getElementById('togBox');
+    showBoxes = cb ? cb.checked : !showBoxes;
+    // 끌 때 남은 박스 즉시 제거
+    if (!showBoxes && map.getSource('objboxes')) {
+      map.getSource('objboxes').setData({ type:'FeatureCollection', features: [] });
+    }
+  }
+}
+
+function setStyle(style) {
+  map.setStyle('mapbox://styles/mapbox/' + style);
+  map.once('style.load', () => {
+    // 스타일 전환 시 모든 source/layer 재초기화
+    addBgImage();   // 이동식 배경 먼저(맨 아래), 현재 오프셋 유지
+    if (laneGeoJSON) addLaneLayers(laneGeoJSON);
+    addCameraLayers();
+    addObjectSource();
+    // animation state 리셋 (옛 source 참조 끊기)
+    animStates.clear();
+    ghostCache.clear();
+    lastDataHash = '';  // sig 캐시도 리셋 → 다음 poll에서 강제 redraw
+    // 즉시 한 번 poll → 객체 다시 그림 (AV 색, label 등 정상 적용)
+    loadJSON();
+  });
+}
+
+// Click popup
+map.on('click', 'obj-circle', (e) => {
+  const p = e.features[0].properties;
+  new mapboxgl.Popup({ offset:15, className:'obj-popup' })
+    .setLngLat(e.lngLat)
+    .setHTML(`<b style="color:${p.color}">${p.cls}</b> #${p.id}<br>${p.label}${p.ped_zone ? `<br><span style="color:${PED_ZONE_COLORS[p.ped_zone]||'#fff'}">위치: ${PED_ZONE_KO[p.ped_zone]||p.ped_zone}</span>` : ''}${p.stop_duration >= 3 ? `<br><span style="color:#f59e0b">정차 ${p.stop_duration}s</span>` : ''}${p.lane_occupancy > 0 ? `<br><span style="color:#f472b6">차선 점유율: ${Math.round(p.lane_occupancy*100)}%</span>` : ''}`)
+    .addTo(map);
+});
+map.on('mouseenter', 'obj-circle', () => map.getCanvas().style.cursor = 'pointer');
+map.on('mouseleave', 'obj-circle', () => map.getCanvas().style.cursor = '');
+
+// ============================================================
+// GCP EDIT MODE: 드래그로 위치 조정 → 좌표 복사
+// ============================================================
+let editMode = false;
+let gcpMarkers = [];
+
+function toggleEditMode() {
+  editMode = !editMode;
+  const btn = document.getElementById('editBtn');
+  const info = document.getElementById('gcpEditInfo');
+
+  if (editMode) {
+    btn.textContent = '편집 모드 OFF';
+    btn.style.background = 'rgba(239,68,68,0.3)';
+    info.textContent = '드래그하여 GCP 위치를 조정하세요';
+    info.style.color = '#10b981';
+    createDraggableGCPs();
+    // 기존 GCP 레이어 숨기기
+    try { map.setLayoutProperty('gcp-circle','visibility','none'); } catch(e){}
+    try { map.setLayoutProperty('gcp-label','visibility','none'); } catch(e){}
+  } else {
+    btn.textContent = '편집 모드 ON';
+    btn.style.background = '';
+    info.textContent = '편집 모드에서 GCP를 드래그하세요';
+    info.style.color = '#64748b';
+    removeDraggableGCPs();
+    try { map.setLayoutProperty('gcp-circle','visibility','visible'); } catch(e){}
+    try { map.setLayoutProperty('gcp-label','visibility','visible'); } catch(e){}
+  }
+}
+
+function createDraggableGCPs() {
+  removeDraggableGCPs();
+
+  cameras.forEach((cam, ci) => {
+    cam.gcps.forEach((gcp, gi) => {
+      // 마커 엘리먼트
+      const el = document.createElement('div');
+      el.style.cssText = `
+        width:18px; height:18px; border-radius:50%;
+        background:${cam.color}; border:2.5px solid white;
+        cursor:grab; box-shadow:0 0 8px ${cam.color};
+        display:flex; align-items:center; justify-content:center;
+        font-size:8px; font-weight:700; color:white;
+        font-family:'JetBrains Mono',monospace;
+      `;
+      el.textContent = gi + 1;
+
+      const marker = new mapboxgl.Marker({ element:el, draggable:true })
+        .setLngLat([gcp.lon, gcp.lat])
+        .addTo(map);
+
+      // 드래그 이벤트
+      marker.on('drag', () => {
+        const pos = marker.getLngLat();
+        // 실시간으로 cameras 데이터 업데이트
+        cameras[ci].gcps[gi].lat = pos.lat;
+        cameras[ci].gcps[gi].lon = pos.lng;
+        updateGCPInfo(ci, gi, pos.lat, pos.lng);
+      });
+
+      marker.on('dragend', () => {
+        const pos = marker.getLngLat();
+        cameras[ci].gcps[gi].lat = pos.lat;
+        cameras[ci].gcps[gi].lon = pos.lng;
+        // FOV 소스도 갱신
+        updateFOVSource();
+      });
+
+      marker._camIdx = ci;
+      marker._gcpIdx = gi;
+      gcpMarkers.push(marker);
+    });
+  });
+}
+
+function removeDraggableGCPs() {
+  gcpMarkers.forEach(m => m.remove());
+  gcpMarkers = [];
+}
+
+function updateGCPInfo(ci, gi, lat, lng) {
+  const info = document.getElementById('gcpEditInfo');
+  info.innerHTML = `<span style="color:${cameras[ci].color}">${cameras[ci].name}</span> GCP-${gi+1}<br>` +
+    `lat: <span style="color:#10b981">${lat.toFixed(8)}</span><br>` +
+    `lon: <span style="color:#10b981">${lng.toFixed(8)}</span>`;
+}
+
+function updateFOVSource() {
+  // GCP를 바탕으로 FOV 갱신할 수도 있지만, 일단 기존 FOV 유지
+  const gcpFeatures = [];
+  cameras.forEach(cam => {
+    cam.gcps.forEach((g, gi) => {
+      gcpFeatures.push({
+        type:'Feature',
+        properties:{ label:`${cam.name.split(' ')[1]}-${gi+1}`, color:cam.color },
+        geometry:{ type:'Point', coordinates:[g.lon, g.lat] }
+      });
+    });
+  });
+  try {
+    map.getSource('gcps').setData({ type:'FeatureCollection', features:gcpFeatures });
+  } catch(e){}
+}
+
+function exportGCPs() {
+  let text = '';
+  cameras.forEach(cam => {
+    text += `// ${cam.name}\n`;
+    text += `gcps: [\n`;
+    cam.gcps.forEach((g, gi) => {
+      text += `  {lat:${g.lat.toFixed(8)}, lon:${g.lon.toFixed(8)}}, // GCP-${gi+1}\n`;
+    });
+    text += `],\n\n`;
+  });
+
+  const pre = document.getElementById('gcpExport');
+  pre.style.display = 'block';
+  pre.textContent = text;
+
+  // 클립보드 복사
+  navigator.clipboard.writeText(text).then(() => {
+    const info = document.getElementById('gcpEditInfo');
+    info.innerHTML = '<span style="color:#10b981">✓ 클립보드에 복사됨!</span>';
+    setTimeout(() => { info.textContent = '편집 모드에서 GCP를 드래그하세요'; }, 2000);
+  }).catch(() => {
+    // 클립보드 실패 시 선택만
+    const range = document.createRange();
+    range.selectNode(pre);
+    window.getSelection().removeAllRanges();
+    window.getSelection().addRange(range);
+  });
+}
+
+// ============================================================
+// ROI 그리기: 지도 클릭으로 꼭짓점 추가 → GPS 폴리곤 좌표 복사
+// ============================================================
+let roiMode = false;
+let roiPoints = [];   // [{lat,lon}]
+let roiMarkers = [];
+
+function roiGeoJSON() {
+  const coords = roiPoints.map(p => [p.lon, p.lat]);
+  const feats = [];
+  if (coords.length >= 3) {
+    feats.push({ type:'Feature', geometry:{ type:'Polygon', coordinates:[coords.concat([coords[0]])] } });
+  } else if (coords.length === 2) {
+    feats.push({ type:'Feature', geometry:{ type:'LineString', coordinates:coords } });
+  }
+  return { type:'FeatureCollection', features:feats };
+}
+function ensureRoiLayer() {
+  if (map.getSource('roi-draw')) return;
+  map.addSource('roi-draw', { type:'geojson', data:roiGeoJSON() });
+  map.addLayer({ id:'roi-fill', type:'fill', source:'roi-draw',
+    paint:{ 'fill-color':'#ef4444', 'fill-opacity':0.18 } });
+  map.addLayer({ id:'roi-line', type:'line', source:'roi-draw',
+    paint:{ 'line-color':'#ef4444', 'line-width':2 } });
+}
+function redrawRoi() {
+  ensureRoiLayer();
+  map.getSource('roi-draw').setData(roiGeoJSON());
+  document.getElementById('roiInfo').textContent = `꼭짓점 ${roiPoints.length}개` + (roiMode ? ' (그리는 중)' : '');
+}
+function addRoiMarker(idx) {
+  const p = roiPoints[idx];
+  const el = document.createElement('div');
+  el.style.cssText = 'width:12px;height:12px;border-radius:50%;background:#ef4444;border:2px solid #fff;cursor:move;box-shadow:0 0 4px rgba(0,0,0,0.6);';
+  const m = new mapboxgl.Marker({ element:el, draggable:true }).setLngLat([p.lon, p.lat]).addTo(map);
+  m.on('drag', () => { const ll=m.getLngLat(); roiPoints[idx]={lat:ll.lat,lon:ll.lng}; redrawRoi(); });
+  roiMarkers.push(m);
+}
+function toggleRoiMode() {
+  roiMode = !roiMode;
+  const btn = document.getElementById('roiBtn');
+  btn.textContent = roiMode ? 'ROI 그리기 OFF' : 'ROI 그리기 ON';
+  btn.style.background = roiMode ? 'rgba(239,68,68,0.3)' : '';
+  map.getCanvas().style.cursor = roiMode ? 'crosshair' : '';
+  redrawRoi();
+}
+function undoRoiPoint() {
+  if (!roiPoints.length) return;
+  roiPoints.pop();
+  const m = roiMarkers.pop(); if (m) m.remove();
+  redrawRoi();
+}
+function clearRoi() {
+  roiPoints = [];
+  roiMarkers.forEach(m=>m.remove()); roiMarkers=[];
+  redrawRoi();
+}
+map.on('click', (e) => {
+  if (!roiMode) return;
+  roiPoints.push({ lat:e.lngLat.lat, lon:e.lngLat.lng });
+  addRoiMarker(roiPoints.length-1);
+  redrawRoi();
+});
+function exportRoi() {
+  let py = '# overlap dedup ROI (폴리곤, 시계/반시계 순서)\nOVERLAP_ROI = [\n';
+  roiPoints.forEach(p => { py += `    (${p.lat.toFixed(7)}, ${p.lon.toFixed(7)}),\n`; });
+  py += ']\n';
+  const pre = document.getElementById('roiExport');
+  pre.style.display = 'block';
+  pre.textContent = py;
+  navigator.clipboard.writeText(py).then(()=>{
+    document.getElementById('roiInfo').innerHTML = '<span style="color:#10b981">✓ 클립보드 복사됨!</span>';
+  }).catch(()=>{});
+}
+</script>
+</body>
+</html>
