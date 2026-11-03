@@ -79,6 +79,9 @@ docker exec KETI_AI pkill -f traffic_tracker.py
 ```
 
 <img width="1416" height="727" alt="image" src="https://github.com/user-attachments/assets/b688a735-5d56-4acd-82d9-6ad512013dd0" />
+<img width="2346" height="1304" alt="검출결과_디버깅예시" src="https://github.com/user-attachments/assets/f5077aac-8f18-4c4c-8afe-a6fce0eb5a3c" />
+해당 버전은 추론 속도 개선 버전임 
+
 <p><i>파이프라인 정상 실행 시 표출 화면 예시</i></p>
 
 
