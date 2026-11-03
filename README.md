@@ -620,6 +620,10 @@ python3 /home/super/c3_yolo26_pipeline/comm_monitor.py \
 
 <img width="1401" height="601" alt="image" src="https://github.com/user-attachments/assets/c636a632-2ed9-430f-98f2-eafd8631fd5d" />
 
+## License
+
+MIT License 
+
 
 
 
