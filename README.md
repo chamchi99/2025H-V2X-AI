@@ -3,7 +3,7 @@
 ## 프로그램 등록증 
 본 기술은 아래 저작권 프로그램을 포함한다. 
 
-### <img width="681" height="948" alt="image" src="https://github.com/user-attachments/assets/108de632-6ec5-49e0-81bd-9b048d1cf240" />
+### <img width="340" height="475" alt="image" src="https://github.com/user-attachments/assets/108de632-6ec5-49e0-81bd-9b048d1cf240" />
 
 ---
 
