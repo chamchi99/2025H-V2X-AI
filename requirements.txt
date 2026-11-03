@@ -1,0 +1,12 @@
+# YOLO26 + StrongSORT Pipeline Requirements
+ultralytics>=8.4.0
+torch>=2.0.0
+torchvision
+numpy
+opencv-python
+scipy
+pandas
+geopy
+colordetect
+pillow
+scikit-learn
