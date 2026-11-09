@@ -8,7 +8,8 @@
 ### <img width="340" height="475" alt="image" src="https://github.com/user-attachments/assets/108de632-6ec5-49e0-81bd-9b048d1cf240" />
 - (국내 특허 출원) 비정상 도로점유 상황을 위한 협력주행 가이던스 시스템 및 제공 방법 (출원번호:10-2026-0129, 출원일:2026.07.14, **우선심사청구 진행 중**) 
 - (국제 특허 출원) SYSTEM AND METHOD FOR PROVIDING COOPERATIVE DRIVING GUIDANCE FOR ABNORMAL ROAD OCCUPANCY SITUATIONS (출원번호:US19/857859, 출원일: 26.10.30) 
-
+- (국내 논문 발표) 2026 한국자동차공학회 춘계학술대회, "협력주행을 위한 다중 카메라 기반 교통상황 모니터링 시스템" (26.05.20 발표) 
+- (국내 논문 발표) 2026 한국데이터사이언스학회 추계종합학술대회논문집, "색히스토그램 특징 융합과 다중 참조영상 매칭을 이용한 다중 카메라 대상 차량 재식별 기술에 관한 연구" (26.11.14 발표 예정) 
 ---
 
 ## 연구개발 개요
