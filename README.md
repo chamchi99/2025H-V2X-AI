@@ -60,13 +60,10 @@ Ultralytics(YOLOv8)와 PyTorch 기반으로 구성되며, NVIDIA GPU 환경에�
 | `gt_dataset_yolov8/` | 초기 학습본 및 학습 결과 | 489 | 초기 `yolov8_gt_best` | [다운로드](https://drive.google.com/file/d/1JIXolOBBQu3JOlIdetxaSEsg22UDaip3/view?usp=drive_link) |
 | `bike_yolo/` | 자전거 검출 강화용 | 303 | `v10_bike_finetuned` | [다운로드](https://drive.google.com/file/d/16bsnSc69z0-LL3EivjLbBNB9VhbUAujj/view?usp=drive_link) |
 | `mixed_gt_bike/` | GT·자전거 혼합 | 772 | `v11_mixed_finetuned` | [다운로드](https://drive.google.com/file/d/1HjLnzA0hh1l3m4zMcMVczGj-y8noVMje/view?usp=drive_link) |
-| `mixed_cyclist/` | cyclist 오검출 개선용 | 1,441* | `v12_mixed_cyclist` | [다운로드](https://drive.google.com/file/d/1Zg7yJydG4Is_J_NP-UHvxtA5-w09IVrA/view?usp=drive_link) |
+| `mixed_cyclist/` | cyclist 오검출 개선용 | 1,441 | `v12_mixed_cyclist` | [다운로드](https://drive.google.com/file/d/1Zg7yJydG4Is_J_NP-UHvxtA5-w09IVrA/view?usp=drive_link) |
 | `hard_negative_ped/` | 보행자 오검출 억제용 | 669 | `v13_hardneg_ped` | [다운로드](https://drive.google.com/file/d/1fjpy6QEL4bWCkOfiBn6eh1t5-Oehzcbv/view?usp=drive_link) |
 
-> 이미지 수는 대략적인 규모이며, 데이터셋 간 중복 이미지가 포함되어 있다.
-> 특히 `gt_dataset/`과 `gt_dataset_v2/`는 이미지가 동일하고 라벨만 다르다.
->
-> \* `mixed_cyclist/`는 폴더 설명에 1,441장, CHANGELOG의 v12 기록에 772장으로 기재되어 있어 최종 수량 확인이 필요하다.
+> 데이터셋 간 중복 이미지가 포함되어 있음. 
 
 ### 데이터셋별 상세 설명
 
@@ -118,8 +115,8 @@ Ultralytics(YOLOv8)와 PyTorch 기반으로 구성되며, NVIDIA GPU 환경에�
 
 v10에서는 자전거 데이터(B)를 이용해 파인튜닝하고, v11에서는 **기존 GT(A)와 신규 데이터(B)를 함께 학습하는 rehearsal 방식**을 적용한다. 이는 신규 데이터에 대한 학습 과정에서 기존에 학습한 객체의 검출 성능이 저하되는 **catastrophic forgetting**을 완화하기 위한 것으로, 차량 검출 결과의 흔들림(car jitter)을 줄이는 목적도 포함한다.
 
-이후 v12에서는 자전거와 탑승자를 단일 `cyclist` 객체로 통합하고 보행자 데이터를 추가하여 cyclist 오검출을 보완한다. v13에서는 보행자 hard-negative 데이터를 활용하여 보행자 오검출 억제를 위한 추가 학습을 수행한다.
-
+이후 자전거와 탑승자를 단일 `cyclist` 객체로 통합하고 보행자 데이터를 추가하여 cyclist 오검출을 보완하였다. 
+26년도 최종모델은 보행자 hard-negative 데이터를 활용하여 보행자 오검출 억제를 위한 추가 학습을 수행하였다. 
 
 ---
 ## ▶️ 실행 방법
