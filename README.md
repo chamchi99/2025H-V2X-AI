@@ -707,6 +707,9 @@ python3 /home/super/c3_yolo26_pipeline/comm_monitor.py \
 
 MIT License 
 
+## Contact Information
+과제책임자 : 신대교 수석연구원 (dukeshin@keti.re.kr)  
+담당자 : 왕유승 선임연구원 (yswang@keti.re.kr) 
 
 
 
