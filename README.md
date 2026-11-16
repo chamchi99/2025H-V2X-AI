@@ -47,50 +47,79 @@ Ultralytics(YOLOv8)와 PyTorch 기반으로 구성되며, NVIDIA GPU 환경에�
 
 객체 검출 모델의 학습과 성능 개선에 사용한 데이터셋이다. 기본 GT 데이터셋과 재라벨링 버전, 자전거 검출 강화 및 보행자 오검출 억제를 위한 추가 학습 데이터셋으로 구성된다.
 
-### 다운로드
+### 데이터셋 구성 및 다운로드
 
-- [gt_dataset.zip 다운로드](https://drive.google.com/file/d/1htX1aKZuybTvacyFhiSNUFJ-LsJOW89j/view?usp=drive_link)
-- [hard_negative_ped.zip 다운로드](https://drive.google.com/file/d/1fjpy6QEL4bWCkOfiBn6eh1t5-Oehzcbv/view?usp=drive_link)
-
-나머지 데이터셋의 다운로드 링크는 추후 추가할 예정이다.
-
-### 데이터셋 구성
+아래 표의 다운로드 링크에서 각 데이터셋을 받을 수 있다.
 
 기본 GT 데이터셋은 **5개 클래스**(`0: person`, `1: cyclist`, `2: car`, `3: motorcycle`, `4: truck`)로 구성된다.
 
-| 폴더 | 주요 내용 | 이미지 수(장) | 대응 학습 버전/모델 |
-|------|------|------:|------|
-| `gt_dataset/` | 기본 5클래스 GT, train/val 분할 | 469 | `gt_best.pt` |
-| `gt_dataset_v2/` | 동일 이미지의 재라벨링 버전 | 469 | v2 라벨 실험용 |
-| `gt_dataset_yolov8/` | 초기 YOLOv8 학습 데이터 및 학습 결과 | 489 | 초기 `yolov8_gt_best` |
-| `bike_yolo/` | 자전거 검출 강화용 | 303 | `v10_bike_finetuned` |
-| `mixed_gt_bike/` | 기본 GT와 자전거 데이터 혼합 | 772 | `v11_mixed_finetuned` |
-| `mixed_cyclist/` | cyclist 라벨 통합 및 보행자 데이터 추가 | — | `v12_mixed_cyclist` |
-| `hard_negative_ped/` | 보행자 오검출 억제용 hard-negative | 669 | `v13_hardneg_ped` |
+| 폴더 | 주요 내용 | 이미지 수(장) | 대응 학습 버전/모델 | 다운로드 |
+|------|------|------:|------|------|
+| `gt_dataset/` | 기본 5클래스 GT | 469 | `gt_best.pt` | [다운로드](https://drive.google.com/file/d/1htX1aKZuybTvacyFhiSNUFJ-LsJOW89j/view?usp=drive_link) |
+| `gt_dataset_v2/` | GT 재라벨링 버전 | 469 | v2 라벨 실험용 | [다운로드](https://drive.google.com/file/d/18pGLyzyptL_ht7F5ziDfXem1eJ4AdtGG/view?usp=drive_link) |
+| `gt_dataset_yolov8/` | 초기 학습본 및 학습 결과 | 489 | 초기 `yolov8_gt_best` | [다운로드](https://drive.google.com/file/d/1JIXolOBBQu3JOlIdetxaSEsg22UDaip3/view?usp=drive_link) |
+| `bike_yolo/` | 자전거 검출 강화용 | 303 | `v10_bike_finetuned` | [다운로드](https://drive.google.com/file/d/16bsnSc69z0-LL3EivjLbBNB9VhbUAujj/view?usp=drive_link) |
+| `mixed_gt_bike/` | GT·자전거 혼합 | 772 | `v11_mixed_finetuned` | [다운로드](https://drive.google.com/file/d/1HjLnzA0hh1l3m4zMcMVczGj-y8noVMje/view?usp=drive_link) |
+| `mixed_cyclist/` | cyclist 오검출 개선용 | 1,441* | `v12_mixed_cyclist` | [다운로드](https://drive.google.com/file/d/1Zg7yJydG4Is_J_NP-UHvxtA5-w09IVrA/view?usp=drive_link) |
+| `hard_negative_ped/` | 보행자 오검출 억제용 | 669 | `v13_hardneg_ped` | [다운로드](https://drive.google.com/file/d/1fjpy6QEL4bWCkOfiBn6eh1t5-Oehzcbv/view?usp=drive_link) |
 
-- **기본 GT:** `gt_dataset/`에는 `dataset.yaml`(`nc: 5`)과 라벨링 메타데이터(`classes.txt`, `notes.json`)가 포함된다.
-- **재라벨링 버전:** `gt_dataset_v2/`는 2026년 4월에 라벨을 수정한 버전으로, 기본 GT와 이미지 및 클래스 구성은 동일하다.
-- **초기 학습본:** `gt_dataset_yolov8/`는 CHANGELOG의 rehearsal base “A” 원형에 해당하며, `train/`, `train2/`에 학습 설정(`args.yaml`)과 PR 곡선 등 학습 결과가 포함된다.
-- **보행자 hard-negative:** `hard_negative_ped/`는 `raw_images/`와 `raw_labels/`로 구성된다.
+> 이미지 수는 대략적인 규모이며, 데이터셋 간 중복 이미지가 포함되어 있다.
+> 특히 `gt_dataset/`과 `gt_dataset_v2/`는 이미지가 동일하고 라벨만 다르다.
+>
+> \* `mixed_cyclist/`는 폴더 설명에 1,441장, CHANGELOG의 v12 기록에 772장으로 기재되어 있어 최종 수량 확인이 필요하다.
 
-> 이미지 수는 대략적인 규모이며, 데이터셋 간 중복 이미지가 포함되어 있다. `gt_dataset/`과 `gt_dataset_v2/`는 이미지가 동일하고 라벨만 다르다. `mixed_cyclist/`의 현재 이미지 수는 확인 후 반영할 예정이다.
+### 데이터셋별 상세 설명
+
+- **`gt_dataset/` — 기본 GT 데이터셋**
+  - 5개 클래스에 대한 GT 이미지와 라벨로 구성되며, train/val로 분할되어 있다.
+  - 데이터셋 설정 파일 `dataset.yaml`(`nc: 5`)과 라벨링 메타데이터 `classes.txt`, `notes.json`이 포함된다.
+  - `gt_best.pt` 모델 학습에 대응하는 기본 데이터셋이다.
+
+- **`gt_dataset_v2/` — GT 재라벨링 버전**
+  - 2026년 4월에 기존 GT의 라벨을 수정한 데이터셋이다.
+  - `gt_dataset/`과 **이미지는 동일하며 라벨만 다르다.**
+  - 기존 5클래스 구성을 유지하며, 수정된 라벨을 적용한 학습 실험에 사용한다.
+
+- **`gt_dataset_yolov8/` — 초기 YOLOv8 학습본**
+  - 약 489장의 초기 학습 데이터와 `train/`, `train2/`의 학습 결과로 구성된다.
+  - 학습 결과에는 학습 설정(`args.yaml`)과 PR 곡선 등이 포함된다.
+  - CHANGELOG에 기록된 rehearsal base “A”의 원형이며, 초기 `yolov8_gt_best` 모델에 대응한다.
+
+- **`bike_yolo/` — 자전거 검출 강화 데이터셋**
+  - 자전거 주행 촬영 데이터(`bike_wang`)를 기반으로 구성된다.
+  - 자전거 검출 성능 강화를 위한 v10 파인튜닝에 사용한다.
+
+- **`mixed_gt_bike/` — GT·자전거 혼합 데이터셋**
+  - 기존 GT 데이터(A)와 신규 자전거 데이터(B)를 합친 데이터셋이다.
+  - 총 772장으로, **train 619장 / val 153장**으로 분할된다.
+  - 자전거 검출 성능을 보완하면서 기존 객체에 대한 검출 성능을 유지하기 위한 v11 학습에 사용한다.
+
+- **`mixed_cyclist/` — cyclist 통합 데이터셋**
+  - 자전거 이미지와 일반 이미지를 혼합하여 cyclist 오검출 개선에 활용한다.
+  - 자전거와 탑승자의 bounding box를 **하나의 `cyclist` bounding box로 통합**하고, 보행자 데이터(`P_`)를 추가한 v12 학습에 대응한다.
+
+- **`hard_negative_ped/` — 보행자 hard-negative 데이터셋**
+  - 보행자로 잘못 검출되는 사례를 학습에 반영하여 보행자 오검출을 억제하기 위한 데이터셋이다.
+  - `raw_images/`와 `raw_labels/`로 구성된다.
+  - `v13_hardneg_ped` 학습에 대응하며, 해당 모델 파일명은 `yolov8_hardneg_ped.pt`이다.
 
 ### 데이터셋 계보 및 학습 방식
 
-[변경 이력](doc/_versions/CHANGELOG.txt)에 따른 주요 데이터셋의 생성 및 조합 관계는 다음과 같다. 아래 이미지 수는 해당 학습 단계의 기록을 기준으로 한다.
+[변경 이력](doc/_versions/CHANGELOG.txt)에 따른 주요 데이터셋의 출처와 조합 관계는 다음과 같다. 아래 이미지 수는 해당 학습 단계에 기록된 수치를 기준으로 한다.
 
-| 구분 | 폴더 | 생성 및 조합 내용 | 이미지 수(장) |
+| 출처 및 학습 단계 | 폴더 | 생성 및 조합 내용 | 이미지 수(장) |
 |------|------|------|------:|
-| 기존 GT (A) | `gt_dataset/` | 2024–2025년 시나리오 영상에서 추출한 5클래스 GT | 469 |
-| 신규 자전거 (B) | `bike_yolo/` | 자전거 주행 촬영 데이터, v10 단독 파인튜닝에 사용 | 303 |
-| GT·자전거 혼합 | `mixed_gt_bike/` | 기존 GT(A)와 신규 자전거(B)를 합쳐 v11 학습 | 772 |
-| cyclist 통합 | `mixed_cyclist/` | 자전거·탑승자 bbox 통합 및 보행자 데이터 추가, v12 학습 | 772 |
+| 2024–2025년 GT (A) | `gt_dataset/` | 시나리오 영상 프레임 기반 5클래스 GT | 469 |
+| 자전거 주행 촬영 (B) | `bike_yolo/` | `bike_wang` 촬영 데이터, v10 학습 | 303 |
+| GT·자전거 혼합 (v11) | `mixed_gt_bike/` | 기존 GT(A) + 신규 자전거(B) | 772 |
+| cyclist 통합 (v12) | `mixed_cyclist/` | 자전거·탑승자 bbox 통합 및 보행자 추가 | 772 |
 
-- **기존 GT(A):** `scenario_camera`, `scenario_camera_bike`, `scenario_camera_ped` 계열의 시나리오 영상 프레임으로 구성된다.
-- **신규 자전거(B):** `bike_wang` 촬영 데이터를 기반으로 자전거 검출 성능을 보완한다.
-- **v11 혼합 학습:** A와 B를 합친 **rehearsal 방식**을 적용한다. 신규 데이터 학습 중 기존 검출 성능이 저하되는 현상(catastrophic forgetting)을 완화하기 위한 구성으로, train 619장과 val 153장으로 분할한다.
-- **v12 cyclist 통합:** 자전거와 탑승자를 하나의 `cyclist` bounding box로 통합하고, 보행자 데이터(`P_`)를 추가하여 cyclist 오검출 개선에 활용한다.
-- **v13 보행자 오검출 개선:** `hard_negative_ped/`를 활용하여 보행자로 잘못 검출되는 사례를 보완한다.
+기존 GT(A)는 시나리오 영상 프레임(`scenario_camera`, `_bike`, `_ped` 계열)을 기반으로 구성되며, 신규 자전거 데이터(B)는 자전거 주행 촬영을 통해 확보한 데이터이다.
+
+v10에서는 자전거 데이터(B)를 이용해 파인튜닝하고, v11에서는 **기존 GT(A)와 신규 데이터(B)를 함께 학습하는 rehearsal 방식**을 적용한다. 이는 신규 데이터에 대한 학습 과정에서 기존에 학습한 객체의 검출 성능이 저하되는 **catastrophic forgetting**을 완화하기 위한 것으로, 차량 검출 결과의 흔들림(car jitter)을 줄이는 목적도 포함한다.
+
+이후 v12에서는 자전거와 탑승자를 단일 `cyclist` 객체로 통합하고 보행자 데이터를 추가하여 cyclist 오검출을 보완한다. v13에서는 보행자 hard-negative 데이터를 활용하여 보행자 오검출 억제를 위한 추가 학습을 수행한다.
+
 
 ---
 ## ▶️ 실행 방법
