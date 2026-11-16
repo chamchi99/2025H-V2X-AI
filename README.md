@@ -44,6 +44,27 @@ Ultralytics(YOLOv8)와 PyTorch 기반으로 구성되며, NVIDIA GPU 환경에�
 
 ---
 
+## 📂 데이터셋 다운로드 및 구성
+
+객체 검출 모델의 학습과 성능 개선에 사용한 데이터셋은 아래 링크에서 다운로드할 수 있다. 기본 GT 데이터셋과 재라벨링 버전, 자전거 검출 강화 및 보행자 오검출 억제를 위한 추가 학습 데이터셋으로 구성된다.
+
+- **다운로드:** [데이터셋 다운로드](DATASET_DOWNLOAD_URL)
+
+기본 GT 데이터셋은 **5개 클래스**(`0: person`, `1: cyclist`, `2: car`, `3: motorcycle`, `4: truck`)로 구성되며, 각 폴더의 내용과 대응 모델은 다음과 같다.
+
+| 폴더 | 내용 | 이미지 수 | 대응 버전/모델 |
+|------|------|------|------|
+| `gt_dataset/` | 기본 5클래스 GT 데이터셋. train/val 분할본과 `dataset.yaml`(`nc: 5`), 라벨링 메타데이터(`classes.txt`, `notes.json`) 포함 | 약 469장 | `gt_best.pt` |
+| `gt_dataset_v2/` | `gt_dataset/`과 **동일한 이미지에 라벨을 수정한 버전**(2026년 4월). 5클래스 구성 유지 | 약 469장 | v2 라벨 실험용 |
+| `gt_dataset_yolov8/` | 초기 YOLOv8 학습 데이터셋과 학습 결과 포함. `train/`, `train2/`에 학습 설정(`args.yaml`), 가중치, PR 곡선 등을 저장하며, CHANGELOG의 rehearsal base “A”에 해당 | 약 489장 | 초기 `yolov8_gt_best` |
+| `bike_yolo/` | 자전거 검출 성능 강화를 위한 추가 학습 데이터셋 | 약 303장 | `v10_bike_finetuned` |
+| `mixed_cyclist/` | cyclist 오검출 개선을 위해 자전거 이미지와 일반 이미지를 혼합한 데이터셋 | 약 1,441장 | `v12_mixed_cyclist` |
+| `mixed_gt_bike/` | 기본 GT 데이터와 자전거 데이터를 혼합한 데이터셋 | 약 772장 | `v11_mixed_finetuned` |
+| `hard_negative_ped/` | 보행자 오검출 억제를 위한 **hard-negative 데이터셋**. `raw_images/`와 `raw_labels/`로 구성 | 약 669장 | `v13_hardneg_ped` → `yolov8_hardneg_ped.pt` |
+
+> 이미지 수는 대략적인 규모이며, 데이터셋 간 중복 이미지가 포함되어 있다. 특히 `gt_dataset/`과 `gt_dataset_v2/`는 이미지가 동일하고 라벨만 다르다. 데이터셋은 모델 학습 및 추가 학습에 사용하며, 제공된 가중치로 추론만 수행하는 경우에는 별도로 다운로드할 필요가 없다.
+
+---
 ## ▶️ 실행 방법
 
 ### 1) 입력 준비
